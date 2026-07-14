@@ -10,6 +10,16 @@ abstract final class SecretMasker {
       entry.key: _isSensitive(entry.key) ? '[REDACTED]' : entry.value,
   };
 
+  /// Redacts common key/value secret shapes in payloads before they reach
+  /// history, exports, diagnostics, or optional AI payload construction.
+  static String redactText(String value) => value.replaceAllMapped(
+    RegExp(
+      r'(authorization|api[-_ ]?key|access[-_ ]?token|password|cookie)(["\s]*[:=]\s*["\s]*)([^"\s,;}]+)',
+      caseSensitive: false,
+    ),
+    (match) => '${match.group(1)}${match.group(2)}[REDACTED]',
+  );
+
   static bool _isSensitive(String name) => RegExp(
     r'authorization|api[-_ ]?key|token|cookie|password',
     caseSensitive: false,

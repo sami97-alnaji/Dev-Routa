@@ -69,10 +69,13 @@ ASCII, Arabic, and emoji plus concurrent REST cancellation and service disposal.
 debug-build, and Windows debug-build jobs; artifacts are uploaded only after
 their respective builds succeed.
 
-The final feature-branch commit, pull request number, CI run URLs, merge commit,
-and `v0.3.0-alpha.1` annotated tag are intentionally recorded in the release
-handoff after those external operations succeed. They are not pre-claimed in
-this audited source document.
+Feature commits at the time of the handoff are `15096e9`, `f251cbb`, and
+`193012f`. A GitHub pull request has not been created because the release
+environment has neither the GitHub CLI nor a `GITHUB_TOKEN`; the feature branch
+was pushed successfully, but creating a PR needs an authenticated GitHub API or
+web session. The pull request number, CI run URLs, merge commit, and
+`v0.3.0-alpha.1` annotated tag must be recorded only after those operations
+succeed. They are not pre-claimed in this audited source document.
 
 ## Intentional exclusions
 

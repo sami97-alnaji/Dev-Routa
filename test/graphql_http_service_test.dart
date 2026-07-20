@@ -3,20 +3,7 @@ import 'dart:io';
 
 import 'package:devroute_ai_studio/features/graphql/data/graphql_http_service.dart';
 import 'package:devroute_ai_studio/features/graphql/domain/graphql_models.dart';
-import 'package:devroute_ai_studio/shared/models/api_models.dart';
-import 'package:devroute_ai_studio/shared/services/service_interfaces.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-class _Secrets implements SecureStorageService {
-  final values = <String, String>{'token': 'runtime-token'};
-  @override
-  Future<void> deleteSecret(String key) async => values.remove(key);
-  @override
-  Future<String?> readSecret(String key) async => values[key];
-  @override
-  Future<void> writeSecret(String key, String value) async =>
-      values[key] = value;
-}
 
 void main() {
   late HttpServer server;

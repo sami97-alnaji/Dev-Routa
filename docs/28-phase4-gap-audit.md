@@ -2,25 +2,25 @@
 
 Status: IN PROGRESS
 
-Audit baseline: `main` at merge commit `1b5cb583579ff6f665c77dc46e1aac29b2fb6f07`, created from PR #2. PR #2 is a Phase 4 foundation merge, not Phase 4 closure.
+Audit baseline: `main` at merge commit `72f877f2d247cf518d00845e78b94bf461ad02e2`, which merged PR #3. PR #2 and PR #3 are Phase 4 foundations, not Phase 4 closure. The final-closure branch baseline passed `flutter analyze` and 62 tests on Flutter 3.41.8 / Dart 3.11.5.
 
 ## Foundation inventory
 
-The merged foundation contains a GraphQL route and adaptive-shell entry, a small editor, basic HTTP execution, cancellation, draft/history tables, schema version 6, initial models, and lexical parser tests. The baseline is healthy: 51 tests pass, `flutter analyze` passes, generated Drift code is current, and Dart formatting is clean.
+The merged foundation contains a GraphQL route and adaptive-shell entry, a small editor, typed HTTP execution, cancellation, draft/history tables, schema version 6, AST parsing, initial subscription transport, schema hash/diff tools, and saved-request persistence. The baseline is healthy, but these foundations are not yet a connected GraphQL Studio workflow.
 
 ## Requirement audit
 
 | Area | Classification | Evidence and gap |
 |---|---|---|
-| GraphQL parsing | Incorrect implementation | `graphql_document_parser.dart` uses regular expressions and brace balancing. It has no maintained AST dependency, source locations, fragments, directives, variable definitions, duplicate-name validation, or anonymous-operation rules. |
+| GraphQL parsing | Complete foundation | `graphql_document_parser.dart` uses `gql` AST parsing with source locations, fragments, directives, variable definitions, duplicate-name validation, and anonymous-operation rules. |
 | Domain models | Partial | Operation, request, and response models exist, but response errors are untyped and there are no typed failure categories, schema, subscription, snapshot, diff, metrics, or export models. |
 | HTTP execution | Partial / security risk | POST/GET query execution and a basic GET-mutation guard exist. Variables are supplied only by the UI, auth/environment/secure-storage resolution is absent, extensions are omitted, errors are not typed, transport failures are generic, and the service constructs its own Dio without the existing execution/security architecture. |
 | Response handling | Partial | Data, errors, extensions, timing, size, and masked response headers are captured. There is no typed location/path/extension model, bounded Unicode-safe preview, raw-body/error/status/timeline UI, or complete partial-success diagnostics. |
-| Subscriptions | Missing | No `graphql-transport-ws` protocol, connection lifecycle, ack timeout, ping/pong, reconnect/resubscribe policy, event metrics, or subscription UI exists. |
-| Introspection | Missing | No explicit introspection action, schema parser, snapshot cache, retention, hash, or denial classification exists. |
+| Subscriptions | Partial / disconnected | `graphql-transport-ws` init, ack, subscribe, next, stop, ping/pong, and ack-timeout foundations exist, but reconnect/resubscribe policy, concurrent-tab management, persistence/history, metrics, and a complete UI are absent. |
+| Introspection | Partial / disconnected | Introspection parsing, stable schema hashing, basic diff, and denial classification exist, but the explicit connected explorer, cancellation, cache retention, offline browsing, and user-facing states are absent. |
 | Schema explorer/diff | Missing | No explorer, operation skeleton generation, snapshot comparison, or conservative change classification exists. |
 | Persistence | Partial | `graphql_drafts` and `graphql_history` are minimal tables. Saved-request CRUD, settings, headers/auth semantics, subscriptions, events, schema snapshots, indexes, ownership, retention, replay, and cleanup are absent. Migration coverage currently checks only table availability and sentinel rows. |
-| CRUD/drafts | Partial | A repository can save/list basic drafts, but it is not connected to collections/folders/workspaces, has no independent tab restoration/autosave/dirty protection, and does not preserve the full execution configuration. |
+| CRUD/drafts | Partial | Saved requests support create/update/move/delete. Final-closure work now adds rename, duplicate, search, reorder, and persistence of extensions, auth secret references, and transport settings. It remains disconnected from independent tabs, autosave, restoration, and dirty/active-operation protection. |
 | History | Partial | A sanitized summary can be inserted. Filtering, pin/tags/notes, retention, replay, comparison, safe JSON/JSONL export, and diagnostic bundles are absent. |
 | Desktop UX | Placeholder / partial | A single editor and response text panel exist. Variables are basic JSON text, headers/auth/settings/schema/history/tabs are absent, and business logic remains in the widget. |
 | Android UX | Missing | No dedicated mobile GraphQL workflow, focused screens, lifecycle handling, accessibility semantics, or GraphQL back protection tests exist. |

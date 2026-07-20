@@ -3,6 +3,7 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/security/secret_masker.dart';
 import '../../../core/storage/database_schema.dart';
+import '../../../shared/models/api_models.dart';
 import '../domain/graphql_models.dart';
 
 class GraphqlDraft {
@@ -132,8 +133,11 @@ class GraphqlRepository {
     String? folderId,
     int sortOrder = 0,
   }) async {
-    final now = DateTime.now();
+    final now = DateTime.fromMillisecondsSinceEpoch(
+      DateTime.now().millisecondsSinceEpoch ~/ 1000 * 1000,
+    );
     final requestId = id ?? _ids.v4();
+    final existing = id == null ? null : await requestById(id);
     await _database.customStatement(
       'INSERT OR REPLACE INTO graphql_saved_requests (id, workspace_id, collection_id, folder_id, name, payload_json, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       <Object?>[
@@ -144,7 +148,7 @@ class GraphqlRepository {
         name,
         _requestJson(request),
         sortOrder,
-        now.millisecondsSinceEpoch ~/ 1000,
+        (existing?.createdAt ?? now).millisecondsSinceEpoch ~/ 1000,
         now.millisecondsSinceEpoch ~/ 1000,
       ],
     );
@@ -169,6 +173,95 @@ class GraphqlRepository {
         )
         .get();
     return rows.map(_savedFromRow).toList(growable: false);
+  }
+
+  Future<GraphqlSavedRequest?> requestById(String id) async {
+    final row = await _database
+        .customSelect(
+          'SELECT * FROM graphql_saved_requests WHERE id = ? LIMIT 1',
+          variables: <Variable>[Variable.withString(id)],
+        )
+        .getSingleOrNull();
+    return row == null ? null : _savedFromRow(row);
+  }
+
+  Future<GraphqlSavedRequest> renameRequest(String id, String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      throw const FormatException('A saved GraphQL request needs a name.');
+    }
+    await _database.customStatement(
+      'UPDATE graphql_saved_requests SET name = ?, updated_at = ? WHERE id = ?',
+      <Object?>[trimmed, DateTime.now().millisecondsSinceEpoch ~/ 1000, id],
+    );
+    final saved = await requestById(id);
+    if (saved == null) {
+      throw StateError('Saved GraphQL request $id was not found.');
+    }
+    return saved;
+  }
+
+  Future<GraphqlSavedRequest> duplicateRequest(
+    String id, {
+    String? name,
+  }) async {
+    final original = await requestById(id);
+    if (original == null) {
+      throw StateError('Saved GraphQL request $id was not found.');
+    }
+    return saveRequest(
+      workspaceId: original.workspaceId,
+      name: name?.trim().isNotEmpty == true
+          ? name!.trim()
+          : '${original.name} copy',
+      request: original.request,
+      collectionId: original.collectionId,
+      folderId: original.folderId,
+      sortOrder: original.sortOrder + 1,
+    );
+  }
+
+  Future<List<GraphqlSavedRequest>> searchRequests(
+    String workspaceId,
+    String query,
+  ) async {
+    final escaped = query
+        .trim()
+        .replaceAll(r'%', r'\%')
+        .replaceAll(r'_', r'\_');
+    if (escaped.isEmpty) return requests(workspaceId);
+    final rows = await _database
+        .customSelect(
+          '''SELECT * FROM graphql_saved_requests
+             WHERE workspace_id = ? AND (name LIKE ? ESCAPE '\\' OR payload_json LIKE ? ESCAPE '\\')
+             ORDER BY sort_order, updated_at DESC''',
+          variables: <Variable>[
+            Variable.withString(workspaceId),
+            Variable.withString('%$escaped%'),
+            Variable.withString('%$escaped%'),
+          ],
+        )
+        .get();
+    return rows.map(_savedFromRow).toList(growable: false);
+  }
+
+  Future<void> reorderRequests(
+    String workspaceId,
+    List<String> orderedIds,
+  ) async {
+    await _database.transaction(() async {
+      for (var index = 0; index < orderedIds.length; index++) {
+        await _database.customStatement(
+          'UPDATE graphql_saved_requests SET sort_order = ?, updated_at = ? WHERE id = ? AND workspace_id = ?',
+          <Object?>[
+            index,
+            DateTime.now().millisecondsSinceEpoch ~/ 1000,
+            orderedIds[index],
+            workspaceId,
+          ],
+        );
+      }
+    });
   }
 
   Future<void> deleteRequest(String id) => _database.customStatement(
@@ -213,6 +306,12 @@ class GraphqlRepository {
           (k, v) => MapEntry(k.toString(), v.toString()),
         ),
         useGet: payload['useGet'] == true,
+        extensions:
+            (payload['extensions'] as Map? ?? const <Object?, Object?>{}).map(
+              (k, v) => MapEntry(k.toString(), v),
+            ),
+        auth: _authFromJson(payload['auth']),
+        settings: _settingsFromJson(payload['settings']),
       ),
     );
   }
@@ -224,5 +323,49 @@ class GraphqlRepository {
     'variables': request.variables,
     'headers': request.headers,
     'useGet': request.useGet,
+    'extensions': request.extensions,
+    'auth': <String, Object?>{
+      'type': request.auth.type.name,
+      'username': request.auth.username,
+      'passwordSecretRef': request.auth.passwordSecretRef,
+      'tokenSecretRef': request.auth.tokenSecretRef,
+      'apiKeyName': request.auth.apiKeyName,
+      'apiKeySecretRef': request.auth.apiKeySecretRef,
+    },
+    'settings': <String, Object?>{
+      'connectTimeoutMs': request.settings.connectTimeoutMs,
+      'sendTimeoutMs': request.settings.sendTimeoutMs,
+      'receiveTimeoutMs': request.settings.receiveTimeoutMs,
+      'followRedirects': request.settings.followRedirects,
+      'maxRedirects': request.settings.maxRedirects,
+      'verifyCertificates': request.settings.verifyCertificates,
+    },
   });
+
+  RequestAuthModel _authFromJson(Object? value) {
+    final json = value is Map ? value : const <Object?, Object?>{};
+    return RequestAuthModel(
+      type: AuthType.values.firstWhere(
+        (type) => type.name == json['type'],
+        orElse: () => AuthType.none,
+      ),
+      username: json['username']?.toString() ?? '',
+      passwordSecretRef: json['passwordSecretRef']?.toString(),
+      tokenSecretRef: json['tokenSecretRef']?.toString(),
+      apiKeyName: json['apiKeyName']?.toString() ?? '',
+      apiKeySecretRef: json['apiKeySecretRef']?.toString(),
+    );
+  }
+
+  RequestSettingsModel _settingsFromJson(Object? value) {
+    final json = value is Map ? value : const <Object?, Object?>{};
+    return RequestSettingsModel(
+      connectTimeoutMs: (json['connectTimeoutMs'] as num?)?.toInt() ?? 15000,
+      sendTimeoutMs: (json['sendTimeoutMs'] as num?)?.toInt() ?? 30000,
+      receiveTimeoutMs: (json['receiveTimeoutMs'] as num?)?.toInt() ?? 30000,
+      followRedirects: json['followRedirects'] != false,
+      maxRedirects: (json['maxRedirects'] as num?)?.toInt() ?? 5,
+      verifyCertificates: json['verifyCertificates'] != false,
+    );
+  }
 }

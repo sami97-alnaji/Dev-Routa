@@ -9,10 +9,10 @@ is always consent-gated.
 
 - Phase 2: Complete
 - Phase 3: Complete
-- Repository production closure: Complete only after CI and merge succeed.
+- Repository closure: Complete
+- Current milestone: v0.3.0-alpha.1
 
-This is a validated development milestone, not a claim of a final production
-release.
+This is a validated alpha development milestone, not a final production release.
 
 ## Capabilities
 

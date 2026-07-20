@@ -62,20 +62,34 @@ ASCII, Arabic, and emoji plus concurrent REST cancellation and service disposal.
 | `flutter build windows --debug` | Passed |
 | `flutter build apk --debug` | Passed |
 
-## CI and release handoff
+## Final CI and release closure
 
 `.github/workflows/flutter-ci.yml` runs on pull requests to `main`, pushes to
 `main` and `feat/**`, and manual dispatch. It has independent quality, Android
 debug-build, and Windows debug-build jobs; artifacts are uploaded only after
 their respective builds succeed.
 
-Feature commits at the time of the handoff are `15096e9`, `f251cbb`, and
-`193012f`. A GitHub pull request has not been created because the release
-environment has neither the GitHub CLI nor a `GITHUB_TOKEN`; the feature branch
-was pushed successfully, but creating a PR needs an authenticated GitHub API or
-web session. The pull request number, CI run URLs, merge commit, and
-`v0.3.0-alpha.1` annotated tag must be recorded only after those operations
-succeed. They are not pre-claimed in this audited source document.
+The previous GitHub authentication blocker was resolved when pull request #1
+merged. The final merged release evidence is:
+
+- Phase 2: **COMPLETE**
+- Phase 3: **COMPLETE**
+- Repository closure: **COMPLETE**
+- Pull request: [#1](https://github.com/sami97-alnaji/Dev-Routa/pull/1)
+- Feature branch: `feat/rest-realtime-phase2-phase3`
+- Feature head commit: `f14fd67f5525b00bc7d819d888f962eec6c5363a`
+- Merge commit: `bb5caec260d194da50aecbf0adb152ce618160c5`
+- GitHub Actions: [run 29743949887](https://github.com/sami97-alnaji/Dev-Routa/actions/runs/29743949887)
+- Quality job: **SUCCESS**
+- Android debug build: **SUCCESS**
+- Windows debug build: **SUCCESS**
+- Local validation: 49 tests passed, analysis and both debug builds passed.
+- REST UTF-8 byte-preview and concurrent cancellation fixes: **COMPLETE**
+- README and CI workflow: **COMPLETE**
+- Planned milestone tag: `v0.3.0-alpha.1`
+
+No mandatory Phase 2 or Phase 3 gap remains. The final documentation commit and
+its CI result complete this closure before the annotated alpha tag is created.
 
 ## Intentional exclusions
 

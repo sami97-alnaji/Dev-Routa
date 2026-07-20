@@ -1,5 +1,90 @@
 import 'dart:convert';
 
+import '../../../shared/models/api_models.dart';
+
+enum GraphqlFailureCategory {
+  validation,
+  unresolvedVariable,
+  missingSecret,
+  cancelled,
+  timeout,
+  network,
+  tls,
+  http,
+  malformedResponse,
+  graphql,
+  protocol,
+  introspectionDenied,
+  unknown,
+}
+
+class GraphqlFailure implements Exception {
+  const GraphqlFailure(this.category, this.message, {this.cause});
+  final GraphqlFailureCategory category;
+  final String message;
+  final Object? cause;
+  @override
+  String toString() => 'GraphQL ${category.name}: $message';
+}
+
+class GraphqlErrorLocation {
+  const GraphqlErrorLocation({required this.line, required this.column});
+  final int line;
+  final int column;
+  Map<String, int> toJson() => <String, int>{'line': line, 'column': column};
+}
+
+class GraphqlErrorPathSegment {
+  const GraphqlErrorPathSegment({required this.value});
+  final Object? value;
+  Object? toJson() => value;
+}
+
+class GraphqlResponseError {
+  const GraphqlResponseError({
+    required this.message,
+    this.locations = const <GraphqlErrorLocation>[],
+    this.path = const <GraphqlErrorPathSegment>[],
+    this.extensions = const <String, Object?>{},
+  });
+  final String message;
+  final List<GraphqlErrorLocation> locations;
+  final List<GraphqlErrorPathSegment> path;
+  final Map<String, Object?> extensions;
+  Map<String, Object?> toJson() => <String, Object?>{
+    'message': message,
+    if (locations.isNotEmpty)
+      'locations': locations.map((item) => item.toJson()).toList(),
+    if (path.isNotEmpty) 'path': path.map((item) => item.toJson()).toList(),
+    if (extensions.isNotEmpty) 'extensions': extensions,
+  };
+
+  factory GraphqlResponseError.fromJson(Object? value) {
+    final map = value is Map ? value : const <Object?, Object?>{};
+    final locations = (map['locations'] as List? ?? const <Object?>[])
+        .whereType<Map>()
+        .map(
+          (item) => GraphqlErrorLocation(
+            line: (item['line'] as num?)?.toInt() ?? 0,
+            column: (item['column'] as num?)?.toInt() ?? 0,
+          ),
+        )
+        .toList(growable: false);
+    return GraphqlResponseError(
+      message: map['message']?.toString() ?? 'Unknown GraphQL error',
+      locations: locations,
+      path: (map['path'] as List? ?? const <Object?>[])
+          .map((item) => GraphqlErrorPathSegment(value: item))
+          .toList(growable: false),
+      extensions:
+          (map['extensions'] as Map?)?.map(
+            (key, value) => MapEntry(key.toString(), value),
+          ) ??
+          const <String, Object?>{},
+    );
+  }
+}
+
 enum GraphqlOperationType { query, mutation, subscription }
 
 class GraphqlOperation {
@@ -52,6 +137,9 @@ class GraphqlRequest {
     this.variables = const <String, Object?>{},
     this.headers = const <String, String>{},
     this.useGet = false,
+    this.extensions = const <String, Object?>{},
+    this.auth = const RequestAuthModel(),
+    this.settings = const RequestSettingsModel(),
   });
   final String endpoint;
   final String document;
@@ -59,6 +147,9 @@ class GraphqlRequest {
   final Map<String, Object?> variables;
   final Map<String, String> headers;
   final bool useGet;
+  final Map<String, Object?> extensions;
+  final RequestAuthModel auth;
+  final RequestSettingsModel settings;
 }
 
 class GraphqlResponse {
@@ -73,7 +164,7 @@ class GraphqlResponse {
   });
   final int? statusCode;
   final Object? data;
-  final List<Object?> errors;
+  final List<GraphqlResponseError> errors;
   final Object? extensions;
   final Duration duration;
   final int sizeBytes;
@@ -81,7 +172,8 @@ class GraphqlResponse {
   bool get hasPartialData => data != null && errors.isNotEmpty;
   String get safeJson => jsonEncode(<String, Object?>{
     if (data != null) 'data': data,
-    if (errors.isNotEmpty) 'errors': errors,
+    if (errors.isNotEmpty)
+      'errors': errors.map((item) => item.toJson()).toList(),
     if (extensions != null) 'extensions': extensions,
   });
 }

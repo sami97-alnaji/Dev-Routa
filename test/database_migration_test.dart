@@ -34,6 +34,16 @@ void main() {
           .get();
       await database
           .customSelect(
+            'SELECT workspace_id, payload_json FROM graphql_saved_requests LIMIT 0',
+          )
+          .get();
+      await database
+          .customSelect(
+            'SELECT schema_hash, snapshot_json FROM graphql_schema_snapshots LIMIT 0',
+          )
+          .get();
+      await database
+          .customSelect(
             'SELECT collection_id, request_id, environment_id, failure_category FROM realtime_history LIMIT 0',
           )
           .get();

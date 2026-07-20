@@ -4,4 +4,6 @@ Architecture: **Clean Architecture with feature-based modules**. `core` owns cro
 
 Features will use `data`, `domain`, and `presentation` sublayers as they are implemented. Widgets only compose UI; execution, persistence, secret access, history, and AI are accessed through interfaces.
 
+Phase 2 composes the active request flow as UI -> `RequestWorkflowCubit` -> validation and repository -> Dio execution -> masked history persistence. The presentation layer does not call Dio directly.
+
 The product is local-first. Drift/SQLite stores non-sensitive metadata; the secure-storage abstraction owns secret values.

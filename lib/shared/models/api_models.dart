@@ -1,6 +1,16 @@
 enum HttpMethod { get, post, put, patch, delete, head, options }
 
-enum RequestBodyType { none, json, rawText, formData, urlEncoded }
+enum RequestBodyType {
+  none,
+  json,
+  rawText,
+  xml,
+  html,
+  formData,
+  multipart,
+  binary,
+  urlEncoded,
+}
 
 enum AuthType { none, bearer, basic, apiKeyHeader, apiKeyQuery }
 
@@ -44,9 +54,11 @@ class FolderModel extends TimestampedEntity {
     required super.updatedAt,
     required this.collectionId,
     required this.name,
+    this.parentFolderId,
   });
   final String collectionId;
   final String name;
+  final String? parentFolderId;
 }
 
 class RequestHeaderModel {
@@ -55,11 +67,15 @@ class RequestHeaderModel {
     required this.value,
     this.enabled = true,
     this.isSecret = false,
+    this.secretRef,
   });
   final String key;
   final String value;
   final bool enabled;
   final bool isSecret;
+
+  /// A secure-storage key. Secret values are never persisted in SQLite.
+  final String? secretRef;
 }
 
 class RequestQueryParamModel {
@@ -74,9 +90,50 @@ class RequestQueryParamModel {
 }
 
 class RequestBodyModel {
-  const RequestBodyModel({required this.type, required this.content});
+  const RequestBodyModel({
+    required this.type,
+    required this.content,
+    this.contentType,
+    this.filePath,
+  });
   final RequestBodyType type;
   final String content;
+  final String? contentType;
+  final String? filePath;
+}
+
+class RequestAuthModel {
+  const RequestAuthModel({
+    this.type = AuthType.none,
+    this.username = '',
+    this.passwordSecretRef,
+    this.tokenSecretRef,
+    this.apiKeyName = '',
+    this.apiKeySecretRef,
+  });
+  final AuthType type;
+  final String username;
+  final String? passwordSecretRef;
+  final String? tokenSecretRef;
+  final String apiKeyName;
+  final String? apiKeySecretRef;
+}
+
+class RequestSettingsModel {
+  const RequestSettingsModel({
+    this.connectTimeoutMs = 15000,
+    this.sendTimeoutMs = 30000,
+    this.receiveTimeoutMs = 30000,
+    this.followRedirects = true,
+    this.maxRedirects = 5,
+    this.verifyCertificates = true,
+  });
+  final int connectTimeoutMs;
+  final int sendTimeoutMs;
+  final int receiveTimeoutMs;
+  final bool followRedirects;
+  final int maxRedirects;
+  final bool verifyCertificates;
 }
 
 class ApiRequestModel extends TimestampedEntity {
@@ -91,6 +148,11 @@ class ApiRequestModel extends TimestampedEntity {
     this.queryParams = const [],
     this.body,
     this.authType = AuthType.none,
+    this.auth = const RequestAuthModel(),
+    this.settings = const RequestSettingsModel(),
+    this.collectionId,
+    this.folderId,
+    this.sortOrder = 0,
   });
   final String name;
   final String url;
@@ -99,6 +161,11 @@ class ApiRequestModel extends TimestampedEntity {
   final List<RequestQueryParamModel> queryParams;
   final RequestBodyModel? body;
   final AuthType authType;
+  final RequestAuthModel auth;
+  final RequestSettingsModel settings;
+  final String? collectionId;
+  final String? folderId;
+  final int sortOrder;
 }
 
 class EnvironmentModel extends TimestampedEntity {
@@ -107,21 +174,50 @@ class EnvironmentModel extends TimestampedEntity {
     required super.createdAt,
     required super.updatedAt,
     required this.name,
+    this.kind = EnvironmentKind.custom,
+    this.workspaceId,
+    this.isActive = false,
   });
   final String name;
+  final EnvironmentKind kind;
+  final String? workspaceId;
+  final bool isActive;
 }
+
+enum EnvironmentKind { local, development, staging, production, custom }
 
 class EnvironmentVariableModel {
   const EnvironmentVariableModel({
+    this.id = '',
+    this.environmentId = '',
     required this.key,
     required this.value,
     this.isSecret = false,
     this.secretRef,
+    this.enabled = true,
+    this.sortOrder = 0,
   });
+  final String id;
+  final String environmentId;
   final String key;
   final String value;
   final bool isSecret;
   final String? secretRef;
+  final bool enabled;
+  final int sortOrder;
+}
+
+class WorkspaceSettingsModel {
+  const WorkspaceSettingsModel({
+    this.historyRetentionDays = 30,
+    this.historyMaximumCount = 1000,
+    this.responsePreviewBytes = 1048576,
+    this.productionStrictMode = true,
+  });
+  final int historyRetentionDays;
+  final int historyMaximumCount;
+  final int responsePreviewBytes;
+  final bool productionStrictMode;
 }
 
 class ApiResponseModel {
@@ -134,6 +230,9 @@ class ApiResponseModel {
     required this.sizeBytes,
     required this.timestamp,
     this.error,
+    this.errorCategory,
+    this.cookies = const <String>[],
+    this.isTruncated = false,
   });
   final int? statusCode;
   final String? statusMessage;
@@ -143,6 +242,15 @@ class ApiResponseModel {
   final int sizeBytes;
   final DateTime timestamp;
   final String? error;
+  final String? errorCategory;
+  final List<String> cookies;
+  final bool isTruncated;
+}
+
+class TokenCandidate {
+  const TokenCandidate({required this.jsonPath, required this.maskedValue});
+  final String jsonPath;
+  final String maskedValue;
 }
 
 class ResponseSnapshotModel extends TimestampedEntity {

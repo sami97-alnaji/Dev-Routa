@@ -41,6 +41,10 @@ class DevRouteApp extends StatelessWidget {
             path: '/realtime',
             builder: (context, state) => const AppShell(initialSection: 5),
           ),
+          GoRoute(
+            path: '/graphql',
+            builder: (context, state) => const AppShell(initialSection: 6),
+          ),
         ],
       );
 

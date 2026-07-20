@@ -14,6 +14,7 @@ import '../../../core/rest/variable_resolution_service.dart';
 import '../../../core/security/secret_masker.dart';
 import '../../../core/storage/local_workspace_repository.dart';
 import '../../../features/realtime/presentation/realtime_screen.dart';
+import '../../../features/graphql/presentation/graphql_screen.dart';
 import '../../../shared/models/api_models.dart';
 import '../../requests/presentation/request_workflow_cubit.dart';
 import 'workspace_cubit.dart';
@@ -97,6 +98,10 @@ class _AppShellState extends State<AppShell> {
                         icon: Icon(Icons.hub_outlined),
                         label: Text('Realtime'),
                       ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.account_tree_outlined),
+                        label: Text('GraphQL'),
+                      ),
                     ],
                   ),
                   const VerticalDivider(width: 1),
@@ -129,6 +134,10 @@ class _AppShellState extends State<AppShell> {
                     icon: Icon(Icons.hub_outlined),
                     label: 'Realtime',
                   ),
+                  NavigationDestination(
+                    icon: Icon(Icons.account_tree_outlined),
+                    label: 'GraphQL',
+                  ),
                 ],
               )
             : null,
@@ -143,7 +152,8 @@ class _AppShellState extends State<AppShell> {
     2 => _history(),
     3 => _environments(),
     4 => _settings(),
-    _ => const RealtimeScreen(),
+    5 => const RealtimeScreen(),
+    _ => const GraphqlScreen(),
   };
 
   Widget _workspace() => BlocBuilder<WorkspaceCubit, WorkspaceState>(

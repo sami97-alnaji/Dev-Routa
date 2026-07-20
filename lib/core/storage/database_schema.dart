@@ -248,6 +248,33 @@ class WorkspaceSettings extends Table {
   Set<Column> get primaryKey => {workspaceId};
 }
 
+/// GraphQL documents and history persist only sanitized payload metadata.
+/// Secret values remain secure-storage references owned by the caller.
+class GraphqlDrafts extends Table {
+  TextColumn get id => text()();
+  TextColumn get workspaceId => text()();
+  TextColumn get title => text()();
+  TextColumn get endpoint => text()();
+  TextColumn get document => text()();
+  TextColumn get operationName => text().nullable()();
+  TextColumn get variablesJson => text().withDefault(const Constant('{}'))();
+  TextColumn get headersJson => text().withDefault(const Constant('{}'))();
+  DateTimeColumn get updatedAt => dateTime()();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class GraphqlHistory extends Table {
+  TextColumn get id => text()();
+  TextColumn get draftId => text().nullable()();
+  TextColumn get workspaceId => text()();
+  TextColumn get operationType => text()();
+  TextColumn get summaryJson => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 @DriftDatabase(
   tables: <Type>[
     Workspaces,
@@ -269,6 +296,8 @@ class WorkspaceSettings extends Table {
     RealtimeHistory,
     AiPreferences,
     WorkspaceSettings,
+    GraphqlDrafts,
+    GraphqlHistory,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -276,7 +305,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -328,6 +357,10 @@ class AppDatabase extends _$AppDatabase {
             workspaceSettings.realtimeMaximumCount,
           );
         }
+      }
+      if (from < 6) {
+        await m.createTable(graphqlDrafts);
+        await m.createTable(graphqlHistory);
       }
     },
   );

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../core/ai/consent_ai_service.dart';
 import '../../../core/security/secret_masker.dart';
 import '../../../shared/services/service_interfaces.dart';
 import '../data/realtime_repository.dart';
@@ -18,6 +19,11 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
     Map<String, String> variables = const <String, String>{},
   }) : _resolver = RealtimeValueResolver(secureStorage, variables: variables),
        super(const RealtimeSessionState());
+  RealtimeSessionCubit._sibling(
+    this._transport,
+    this._repository,
+    this._resolver,
+  ) : super(const RealtimeSessionState());
   final RealtimeTransport _transport;
   final RealtimeRepository _repository;
   final RealtimeValueResolver _resolver;
@@ -25,8 +31,16 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
   RealtimeTransportConnection? _connection;
   var _generation = 0;
   var _manualClose = false;
+  final List<TransportMessage> _pendingStreamMessages = <TransportMessage>[];
+  Timer? _flushTimer;
 
-  Future<void> connect(RealtimeSessionConfig config) async {
+  Future<void> connect(RealtimeSessionConfig config) =>
+      _connect(config, reconnectAttempt: 0);
+
+  Future<void> _connect(
+    RealtimeSessionConfig config, {
+    required int reconnectAttempt,
+  }) async {
     if (state.status == RealtimeConnectionStatus.connecting ||
         state.status == RealtimeConnectionStatus.connected) {
       return;
@@ -37,7 +51,14 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
       RealtimeSessionState(
         status: RealtimeConnectionStatus.connecting,
         config: config,
-        metrics: RealtimeMetrics(startedAt: DateTime.now()),
+        metrics: RealtimeMetrics(
+          startedAt: reconnectAttempt == 0
+              ? DateTime.now()
+              : state.metrics.startedAt ?? DateTime.now(),
+          bytesIn: reconnectAttempt == 0 ? 0 : state.metrics.bytesIn,
+          bytesOut: reconnectAttempt == 0 ? 0 : state.metrics.bytesOut,
+          reconnectAttempts: reconnectAttempt,
+        ),
         isDirty: false,
       ),
     );
@@ -71,6 +92,7 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
     _subscription = null;
     await _connection?.close();
     _connection = null;
+    _flushPendingStreamMessages();
     if (!isClosed && state.config != null) {
       emit(
         state.copyWith(
@@ -82,7 +104,39 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
     }
   }
 
-  Future<void> cancel() => disconnect();
+  Future<void> cancel() async {
+    _manualClose = true;
+    ++_generation;
+    await _subscription?.cancel();
+    _subscription = null;
+    await _connection?.close();
+    _connection = null;
+    _flushPendingStreamMessages();
+    if (!isClosed) {
+      emit(
+        state.copyWith(
+          status: RealtimeConnectionStatus.cancelled,
+          metrics: state.metrics.copyWith(endedAt: DateTime.now()),
+        ),
+      );
+      await _persist();
+    }
+  }
+
+  Future<void> reconnect() async {
+    final config = state.config;
+    if (config == null) return;
+    await disconnect();
+    await connect(config);
+  }
+
+  void updateConfig(RealtimeSessionConfig config) =>
+      emit(state.copyWith(config: config, isDirty: true));
+
+  void updateEnvironmentVariables(
+    Map<String, String> values,
+    Map<String, String> secretRefs,
+  ) => _resolver.updateVariables(values, secretRefs);
 
   Future<void> saveDraft() async {
     if (state.config != null) {
@@ -93,8 +147,56 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
   Future<void> saveConfiguration() async {
     if (state.config != null) {
       await _repository.saveConfiguration(state.config!);
+      emit(state.copyWith(isDirty: false));
     }
   }
+
+  Future<List<RealtimeSessionConfig>> configurations(String workspaceId) =>
+      _repository.configurations(workspaceId);
+  Future<List<RealtimeSessionConfig>> drafts(String workspaceId) =>
+      _repository.drafts(workspaceId);
+  Future<void> deleteConfiguration(String id) =>
+      _repository.deleteConfiguration(id);
+  Future<void> deleteDraft(String configurationId) =>
+      _repository.deleteDraft(configurationId);
+  Future<List<RealtimeHistoryEntry>> history({RealtimeHistoryFilter? filter}) =>
+      _repository.history(filter: filter);
+  Future<void> updateHistoryMetadata(
+    String id, {
+    bool? pinned,
+    List<String>? tags,
+    String? notes,
+  }) =>
+      _repository.updateMetadata(id, pinned: pinned, tags: tags, notes: notes);
+  Future<void> deleteHistory(String id) => _repository.deleteHistory(id);
+  Future<void> clearHistory({String? workspaceId}) =>
+      _repository.clearHistory(workspaceId: workspaceId);
+  Future<RealtimeSessionConfig?> reopenHistory(String id) =>
+      _repository.reopen(id);
+  Future<void> applyRetention({required int maximumCount, int? days}) =>
+      _repository.retain(
+        maximumCount: maximumCount,
+        olderThan: days == null
+            ? null
+            : DateTime.now().subtract(Duration(days: days)),
+      );
+  Future<({int days, int maximumCount})> retention(String workspaceId) =>
+      _repository.retention(workspaceId);
+  Future<void> saveRetention(
+    String workspaceId, {
+    required int days,
+    required int maximumCount,
+  }) => _repository.saveRetention(
+    workspaceId,
+    days: days,
+    maximumCount: maximumCount,
+  );
+  Future<AiConsentOptions> aiPreferences() => _repository.aiPreferences();
+  Future<void> saveAiPreferences(AiConsentOptions options) =>
+      _repository.saveAiPreferences(options);
+
+  RealtimeSessionCubit createSibling() =>
+      RealtimeSessionCubit._sibling(_transport, _repository, _resolver.fork());
 
   Future<void> sendText(String value) => _send(value, RealtimePayloadType.text);
   Future<void> sendJson(String value) async {
@@ -144,6 +246,29 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
       emit(state.copyWith(messages: const <RealtimeMessage>[]));
 
   void _receive(TransportMessage message) {
+    if (state.config?.protocol == RealtimeProtocolType.httpStream) {
+      _pendingStreamMessages.add(message);
+      _flushTimer ??= Timer(
+        const Duration(milliseconds: 16),
+        _flushPendingStreamMessages,
+      );
+      return;
+    }
+    _receiveNow(message);
+  }
+
+  void _flushPendingStreamMessages() {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    if (isClosed || _pendingStreamMessages.isEmpty) return;
+    final messages = List<TransportMessage>.of(_pendingStreamMessages);
+    _pendingStreamMessages.clear();
+    for (final message in messages) {
+      _receiveNow(message);
+    }
+  }
+
+  void _receiveNow(TransportMessage message) {
     final body = message.type == RealtimePayloadType.binary
         ? '[binary payload not retained]'
         : SecretMasker.redactText(message.content);
@@ -160,10 +285,22 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
         retry: message.retry,
       ),
     );
-    if (message.eventId != null && state.config != null) {
+    if ((message.eventId != null || message.retry != null) &&
+        state.config != null) {
+      final currentPolicy = state.config!.reconnectPolicy;
       emit(
         state.copyWith(
-          config: state.config!.copyWith(lastEventId: message.eventId),
+          config: state.config!.copyWith(
+            lastEventId: message.eventId,
+            reconnectPolicy: message.retry == null
+                ? currentPolicy
+                : ReconnectPolicy(
+                    enabled: currentPolicy.enabled,
+                    maxAttempts: currentPolicy.maxAttempts,
+                    initialDelay: Duration(milliseconds: message.retry!),
+                    maxDelay: currentPolicy.maxDelay,
+                  ),
+          ),
           metrics: state.metrics.copyWith(
             bytesIn: state.metrics.bytesIn + message.content.length,
           ),
@@ -186,7 +323,15 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
     final maximum = state.config?.maxEvents ?? 500;
     final messages = <RealtimeMessage>[...state.messages, message];
     if (messages.length > maximum) {
+      final dropped = messages.length - maximum;
       messages.removeRange(0, messages.length - maximum);
+      emit(
+        state.copyWith(
+          messages: messages,
+          droppedMessages: state.droppedMessages + dropped,
+        ),
+      );
+      return;
     }
     emit(state.copyWith(messages: messages));
   }
@@ -195,6 +340,7 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
     if (isClosed || _manualClose) {
       return;
     }
+    _flushPendingStreamMessages();
     emit(
       state.copyWith(
         status: RealtimeConnectionStatus.completed,
@@ -208,6 +354,7 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
     if (isClosed || _manualClose) {
       return;
     }
+    _flushPendingStreamMessages();
     final failure = _failure(error);
     _append(
       RealtimeMessage(
@@ -234,8 +381,7 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
           !_manualClose &&
           generation == _generation &&
           state.config != null) {
-        ++_generation;
-        await connect(state.config!);
+        await _connect(state.config!, reconnectAttempt: attempt + 1);
       }
       return;
     }
@@ -271,6 +417,7 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
 
   @override
   Future<void> close() async {
+    _flushTimer?.cancel();
     await disconnect();
     return super.close();
   }

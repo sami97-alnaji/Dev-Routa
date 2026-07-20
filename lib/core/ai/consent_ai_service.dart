@@ -20,6 +20,29 @@ class AiPayloadPreview {
   final Map<String, Object?> payload;
 }
 
+enum AiAnalysisAction {
+  explainResponse,
+  analyzeError,
+  suggestRequestFixes,
+  summarizeRealtimeSession,
+  generateTestIdeas,
+}
+
+class AiAnalysisRequest {
+  const AiAnalysisRequest({required this.action, required this.preview});
+  final AiAnalysisAction action;
+  final AiPayloadPreview preview;
+}
+
+class AiCancellationToken {
+  bool _cancelled = false;
+  bool get isCancelled => _cancelled;
+  void cancel() => _cancelled = true;
+  void throwIfCancelled() {
+    if (_cancelled) throw StateError('AI analysis was cancelled.');
+  }
+}
+
 abstract interface class ExternalAiProvider {
   Future<String> analyze(AiPayloadPreview preview);
 }
@@ -55,5 +78,22 @@ abstract final class ConsentAiService {
       }
     });
     return AiPayloadPreview(result);
+  }
+
+  static Future<String> analyze({
+    required AiConsentOptions options,
+    required Map<String, Object?> source,
+    required ExternalAiProvider provider,
+    AiCancellationToken? cancellationToken,
+  }) async {
+    if (!options.granted) {
+      throw StateError('Explicit AI consent is required before sending.');
+    }
+    cancellationToken?.throwIfCancelled();
+    final result = await provider.analyze(
+      preview(options: options, source: source),
+    );
+    cancellationToken?.throwIfCancelled();
+    return result;
   }
 }

@@ -4,6 +4,8 @@ import '../../../shared/models/api_models.dart';
 
 enum RealtimeProtocolType { webSocket, sse, httpStream }
 
+enum HttpStreamMode { raw, lines, ndjson }
+
 enum RealtimeConnectionStatus {
   idle,
   connecting,
@@ -60,11 +62,17 @@ class RealtimeSessionConfig {
     this.headers = const <RequestHeaderModel>[],
     this.queryParams = const <RequestQueryParamModel>[],
     this.body,
+    this.auth = const RequestAuthModel(),
     this.subprotocols = const <String>[],
     this.connectionTimeout = const Duration(seconds: 15),
     this.reconnectPolicy = const ReconnectPolicy(),
     this.lastEventId,
     this.maxEvents = 500,
+    this.streamMode = HttpStreamMode.raw,
+    this.collectionId,
+    this.requestId,
+    this.environmentId,
+    this.productionEnvironment = false,
   });
   final String id;
   final RealtimeProtocolType protocol;
@@ -75,32 +83,59 @@ class RealtimeSessionConfig {
   final List<RequestHeaderModel> headers;
   final List<RequestQueryParamModel> queryParams;
   final RequestBodyModel? body;
+  final RequestAuthModel auth;
   final List<String> subprotocols;
   final Duration connectionTimeout;
   final ReconnectPolicy reconnectPolicy;
   final String? lastEventId;
   final int maxEvents;
+  final HttpStreamMode streamMode;
+  final String? collectionId;
+  final String? requestId;
+  final String? environmentId;
+  final bool productionEnvironment;
 
   RealtimeSessionConfig copyWith({
     String? url,
     RealtimeProtocolType? protocol,
     String? name,
     String? lastEventId,
+    HttpMethod? method,
+    List<RequestHeaderModel>? headers,
+    List<RequestQueryParamModel>? queryParams,
+    RequestBodyModel? body,
+    RequestAuthModel? auth,
+    List<String>? subprotocols,
+    Duration? connectionTimeout,
+    ReconnectPolicy? reconnectPolicy,
+    int? maxEvents,
+    HttpStreamMode? streamMode,
+    String? collectionId,
+    String? requestId,
+    String? environmentId,
+    bool? productionEnvironment,
+    String? workspaceId,
   }) => RealtimeSessionConfig(
     id: id,
     protocol: protocol ?? this.protocol,
     url: url ?? this.url,
     name: name ?? this.name,
-    workspaceId: workspaceId,
-    method: method,
-    headers: headers,
-    queryParams: queryParams,
-    body: body,
-    subprotocols: subprotocols,
-    connectionTimeout: connectionTimeout,
-    reconnectPolicy: reconnectPolicy,
+    workspaceId: workspaceId ?? this.workspaceId,
+    method: method ?? this.method,
+    headers: headers ?? this.headers,
+    queryParams: queryParams ?? this.queryParams,
+    body: body ?? this.body,
+    auth: auth ?? this.auth,
+    subprotocols: subprotocols ?? this.subprotocols,
+    connectionTimeout: connectionTimeout ?? this.connectionTimeout,
+    reconnectPolicy: reconnectPolicy ?? this.reconnectPolicy,
     lastEventId: lastEventId ?? this.lastEventId,
-    maxEvents: maxEvents,
+    maxEvents: maxEvents ?? this.maxEvents,
+    streamMode: streamMode ?? this.streamMode,
+    collectionId: collectionId ?? this.collectionId,
+    requestId: requestId ?? this.requestId,
+    environmentId: environmentId ?? this.environmentId,
+    productionEnvironment: productionEnvironment ?? this.productionEnvironment,
   );
 }
 
@@ -174,6 +209,7 @@ class RealtimeSessionState {
     this.metrics = const RealtimeMetrics(),
     this.failure,
     this.isDirty = false,
+    this.droppedMessages = 0,
   });
   final RealtimeConnectionStatus status;
   final RealtimeSessionConfig? config;
@@ -181,6 +217,7 @@ class RealtimeSessionState {
   final RealtimeMetrics metrics;
   final RealtimeFailure? failure;
   final bool isDirty;
+  final int droppedMessages;
   bool get canSend =>
       status == RealtimeConnectionStatus.connected &&
       config?.protocol == RealtimeProtocolType.webSocket;
@@ -192,6 +229,7 @@ class RealtimeSessionState {
     RealtimeFailure? failure,
     bool clearFailure = false,
     bool? isDirty,
+    int? droppedMessages,
   }) => RealtimeSessionState(
     status: status ?? this.status,
     config: config ?? this.config,
@@ -199,6 +237,7 @@ class RealtimeSessionState {
     metrics: metrics ?? this.metrics,
     failure: clearFailure ? null : (failure ?? this.failure),
     isDirty: isDirty ?? this.isDirty,
+    droppedMessages: droppedMessages ?? this.droppedMessages,
   );
 }
 

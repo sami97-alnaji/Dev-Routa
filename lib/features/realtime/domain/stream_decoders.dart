@@ -2,8 +2,11 @@ import 'dart:convert';
 
 class IncrementalTextDecoder {
   final StringBuffer _buffer = StringBuffer();
+  late final ByteConversionSink _sink = const Utf8Decoder(
+    allowMalformed: true,
+  ).startChunkedConversion(StringConversionSink.fromStringSink(_buffer));
   List<String> add(List<int> bytes) {
-    _buffer.write(utf8.decode(bytes, allowMalformed: true));
+    _sink.add(bytes);
     return const <String>[];
   }
 
@@ -12,6 +15,45 @@ class IncrementalTextDecoder {
     _buffer.clear();
     return value;
   }
+}
+
+/// Preserves UTF-8 code points split across arbitrary network chunks and emits
+/// decoded text synchronously to protocol parsers.
+class IncrementalUtf8Decoder {
+  IncrementalUtf8Decoder() {
+    _sink = const Utf8Decoder(allowMalformed: true).startChunkedConversion(
+      StringConversionSink.fromStringSink(_DecodedStringSink(_decoded)),
+    );
+  }
+  final List<String> _decoded = <String>[];
+  late final ByteConversionSink _sink;
+  String add(List<int> bytes) {
+    _sink.add(bytes);
+    final value = _decoded.join();
+    _decoded.clear();
+    return value;
+  }
+
+  String close() {
+    _sink.close();
+    final value = _decoded.join();
+    _decoded.clear();
+    return value;
+  }
+}
+
+class _DecodedStringSink implements StringSink {
+  _DecodedStringSink(this.values);
+  final List<String> values;
+  @override
+  void write(Object? object) => values.add(object?.toString() ?? '');
+  @override
+  void writeAll(Iterable<Object?> objects, [String separator = '']) =>
+      values.add(objects.join(separator));
+  @override
+  void writeCharCode(int charCode) => values.add(String.fromCharCode(charCode));
+  @override
+  void writeln([Object? object = '']) => values.add('${object ?? ''}\n');
 }
 
 class NdjsonDecoder {

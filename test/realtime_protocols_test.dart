@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:devroute_ai_studio/core/ai/consent_ai_service.dart';
 import 'package:devroute_ai_studio/core/diagnostics/developer_diagnostics.dart';
+import 'package:devroute_ai_studio/core/diagnostics/history_comparison_service.dart';
 import 'package:devroute_ai_studio/core/security/secret_masker.dart';
 import 'package:devroute_ai_studio/features/realtime/domain/realtime_models.dart';
 import 'package:devroute_ai_studio/features/realtime/domain/sse_parser.dart';
@@ -30,6 +33,11 @@ void main() {
         expect(events.single.comment, 'heartbeat');
       },
     );
+    test('reports malformed retry fields as diagnostics', () {
+      final parser = SseParser();
+      final events = parser.addText('retry: later\n\n');
+      expect(events.single.diagnostic, contains('Malformed SSE retry'));
+    });
   });
 
   test(
@@ -52,6 +60,31 @@ void main() {
     expect(policy.delayFor(4), const Duration(milliseconds: 450));
   });
 
+  test('incremental UTF-8 decoder preserves split multibyte characters', () {
+    final decoder = IncrementalUtf8Decoder();
+    final bytes = 'مرحبا'.codeUnits;
+    final encoded = utf8.encode('مرحبا');
+    expect(bytes, isNotEmpty);
+    final first = decoder.add(encoded.sublist(0, 1));
+    final second = decoder.add(encoded.sublist(1));
+    expect('$first$second${decoder.close()}', 'مرحبا');
+  });
+
+  test('comparison is JSON-aware with text fallback', () {
+    final changes = HistoryComparisonService.compareJsonText(
+      '{"status":200,"body":{"ok":true}}',
+      '{"status":201,"body":{"ok":false}}',
+    );
+    expect(
+      changes.map((item) => item.path),
+      containsAll([r'$.status', r'$.body.ok']),
+    );
+    expect(
+      HistoryComparisonService.compareJsonText('a', 'b').single.path,
+      r'$',
+    );
+  });
+
   test('secret masking and AI consent cannot include data until consent', () {
     expect(
       SecretMasker.redactText('Authorization: top-secret'),
@@ -67,6 +100,27 @@ void main() {
       source: <String, Object?>{'body': 'password=secret'},
     );
     expect(allowed.payload['body'], contains('[REDACTED]'));
+  });
+
+  test('AI analysis requires consent and honors cancellation', () async {
+    await expectLater(
+      ConsentAiService.analyze(
+        options: const AiConsentOptions(),
+        source: const <String, Object?>{},
+        provider: FakeAiProvider(),
+      ),
+      throwsStateError,
+    );
+    final token = AiCancellationToken()..cancel();
+    await expectLater(
+      ConsentAiService.analyze(
+        options: const AiConsentOptions(granted: true),
+        source: const <String, Object?>{},
+        provider: FakeAiProvider(),
+        cancellationToken: token,
+      ),
+      throwsStateError,
+    );
   });
 
   test('diagnostics separate observed facts from suggestions', () {

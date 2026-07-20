@@ -1,5 +1,5 @@
 # Realtime storage and retention policy
 
-Schema version 3 adds `realtime_configurations`, `realtime_drafts`, `realtime_history`, and `ai_preferences`. It upgrades schema version 2 without deleting prior data. Realtime configurations store non-secret metadata only; secret fields store secure-storage references and never their values.
+Schema version 5 contains `realtime_configurations`, `realtime_drafts`, `realtime_history`, and `ai_preferences`. Migrations from supported versions 1, 2, 3, and 4 preserve existing data. Version 5 adds workspace/collection/request/environment/failure history filters, persisted realtime age/count retention, and non-secret AI provider metadata. Realtime configurations store secure-storage references, never resolved secret values.
 
-History stores redacted event summaries, optional pin/tags/notes metadata, and never raw binary bytes. Repository retention supports maximum-count and age cleanup. The history browser and user-configurable retention controls are still pending.
+History stores redacted event summaries, status/failure links, pin/tags/local notes, and never raw binary bytes. The browser supports protocol/workspace/status/failure/date/search filters, reopen-as-draft, deletion, clear, comparison, JSON/JSONL export, and persisted maximum-count plus age cleanup. Workspace deletion cascades through realtime configurations, drafts, history, and settings.

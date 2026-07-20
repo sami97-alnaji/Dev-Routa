@@ -1,5 +1,5 @@
 # Phase 3 test plan
 
-Current unit coverage verifies SSE multiline/comment/id/retry parsing, NDJSON split handling, bounded reconnect backoff, masking, AI consent preview, and diagnostic labeling.
+## Status: COMPLETE
 
-Pending coverage: transport state transitions with fake transport, UTF-8 split chunk fidelity, repository migration from schema 2, realtime draft/history cascade and retention, WebSocket/SSE/HTTP local integration servers, comparison, and responsive desktop/Android flows.
+Coverage verifies session transitions, cancellation, bounded reconnect/backoff, concurrent-session isolation, batched/bounded stream state, SSE multiline/comment/id/retry/malformed parsing, split UTF-8 fidelity, line/NDJSON handling, masking and reflected-secret redaction, AI consent/cancellation, diagnostic labeling, JSON-aware comparison with text fallback, schema upgrades from versions 1–4, realtime configuration/draft/history/metadata/retention/AI-preference persistence, local WebSocket echo and abnormal close, local SSE, local chunked NDJSON, REST regression, and responsive desktop/Android principal flows.

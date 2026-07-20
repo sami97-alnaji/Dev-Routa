@@ -78,4 +78,57 @@ void main() {
     expect(find.text('HOST'), findsOneWidget);
     expect(find.text('localhost'), findsOneWidget);
   });
+
+  testWidgets(
+    'desktop realtime exposes independent sessions and history tools',
+    (tester) async {
+      tester.view.physicalSize = const Size(1440, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      await tester.pumpWidget(DevRouteApp(database: database));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Realtime').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Session'), findsOneWidget);
+      expect(find.byKey(const Key('realtime-url')), findsOneWidget);
+      await tester.tap(find.byTooltip('New independent session (Ctrl+N)'));
+      await tester.pumpAndSettle();
+      expect(find.byType(InputChip), findsNWidgets(2));
+      await tester.tap(find.text('History').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Compare selected'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Android realtime layout has compact config and safe back guard',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(database.close);
+      await tester.pumpWidget(DevRouteApp(database: database));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Realtime').last);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('realtime-url')), findsOneWidget);
+      expect(
+        find.text('Params, Auth, Headers, Body, Settings, Resolved Preview'),
+        findsOneWidget,
+      );
+      await tester.enterText(
+        find.byKey(const Key('realtime-url')),
+        'ws://localhost:8080',
+      );
+      await tester.pump();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('Leave realtime session?'), findsOneWidget);
+    },
+  );
 }

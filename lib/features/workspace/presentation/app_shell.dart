@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/diagnostics/developer_diagnostics.dart';
+import '../../../core/diagnostics/history_comparison_service.dart';
 import '../../../core/rest/request_safety_service.dart';
 import '../../../core/rest/safe_export_service.dart';
 import '../../../core/rest/token_candidate_service.dart';
@@ -29,6 +30,7 @@ class _AppShellState extends State<AppShell> {
   final _urlController = TextEditingController();
   String? _historyMethod;
   int? _historyMinimumStatus;
+  final Set<String> _restComparison = <String>{};
   String _responseSearch = '';
   bool _rawResponse = false;
 
@@ -1233,6 +1235,17 @@ class _AppShellState extends State<AppShell> {
                 icon: const Icon(Icons.delete_sweep_outlined),
                 label: const Text('Clear all'),
               ),
+              FilledButton.tonalIcon(
+                onPressed: _restComparison.length == 2
+                    ? () => _compareRestHistory(
+                        filtered
+                            .where((item) => _restComparison.contains(item.id))
+                            .toList(),
+                      )
+                    : null,
+                icon: const Icon(Icons.compare_arrows),
+                label: const Text('Compare selected'),
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -1245,10 +1258,16 @@ class _AppShellState extends State<AppShell> {
                       final item = filtered[index];
                       return Card(
                         child: ListTile(
-                          leading: Icon(
-                            item.status != null && item.status! < 400
-                                ? Icons.check_circle_outline
-                                : Icons.error_outline,
+                          leading: Checkbox(
+                            value: _restComparison.contains(item.id),
+                            onChanged: (selected) => setState(() {
+                              if (selected == true &&
+                                  _restComparison.length < 2) {
+                                _restComparison.add(item.id);
+                              } else {
+                                _restComparison.remove(item.id);
+                              }
+                            }),
                           ),
                           title: Text(
                             '${item.method.toUpperCase()} ${item.url}',
@@ -1990,6 +2009,68 @@ class _AppShellState extends State<AppShell> {
             icon: const Icon(Icons.replay_outlined),
             label: const Text('Replay'),
           ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _compareRestHistory(List<HistoryEntry> entries) async {
+    if (entries.length != 2) return;
+    final before = entries[0];
+    final after = entries[1];
+    final changes = <ComparisonChange>[
+      ...HistoryComparisonService.compareValues(
+        <String, Object?>{
+          'status': before.status,
+          'timingMs': before.durationMs,
+          'sizeBytes': before.snapshot['sizeBytes'],
+          'headers': before.snapshot['responseHeaders'],
+        },
+        <String, Object?>{
+          'status': after.status,
+          'timingMs': after.durationMs,
+          'sizeBytes': after.snapshot['sizeBytes'],
+          'headers': after.snapshot['responseHeaders'],
+        },
+      ),
+      ...HistoryComparisonService.compareJsonText(
+        before.snapshot['body']?.toString() ?? '',
+        after.snapshot['body']?.toString() ?? '',
+      ).map(
+        (item) => ComparisonChange(
+          'body${item.path.substring(1)}',
+          item.before,
+          item.after,
+        ),
+      ),
+    ];
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('REST history comparison'),
+        content: SizedBox(
+          width: 760,
+          height: 500,
+          child: changes.isEmpty
+              ? const Center(child: Text('No differences.'))
+              : ListView(
+                  children: changes
+                      .map(
+                        (item) => ListTile(
+                          title: Text(item.path),
+                          subtitle: SelectableText(
+                            '${item.before}  →  ${item.after}',
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+        ),
+        actions: [
           FilledButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),

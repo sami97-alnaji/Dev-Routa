@@ -186,6 +186,10 @@ class RealtimeHistory extends Table {
   TextColumn get configurationId => text().nullable()();
   TextColumn get protocol => text()();
   TextColumn get status => text()();
+  TextColumn get collectionId => text().nullable()();
+  TextColumn get requestId => text().nullable()();
+  TextColumn get environmentId => text().nullable()();
+  TextColumn get failureCategory => text().nullable()();
   TextColumn get summaryJson => text()();
   BoolColumn get pinned => boolean().withDefault(const Constant(false))();
   TextColumn get tagsJson => text().withDefault(const Constant('[]'))();
@@ -200,6 +204,8 @@ class AiPreferences extends Table {
   BoolColumn get consentGranted =>
       boolean().withDefault(const Constant(false))();
   TextColumn get providerName => text().nullable()();
+  TextColumn get providerModel => text().nullable()();
+  TextColumn get providerEndpoint => text().nullable()();
   BoolColumn get includeBodies =>
       boolean().withDefault(const Constant(false))();
   BoolColumn get includeHeaders =>
@@ -233,6 +239,10 @@ class WorkspaceSettings extends Table {
       integer().withDefault(const Constant(1048576))();
   BoolColumn get productionStrictMode =>
       boolean().withDefault(const Constant(true))();
+  IntColumn get realtimeRetentionDays =>
+      integer().withDefault(const Constant(30))();
+  IntColumn get realtimeMaximumCount =>
+      integer().withDefault(const Constant(500))();
   DateTimeColumn get updatedAt => dateTime()();
   @override
   Set<Column> get primaryKey => {workspaceId};
@@ -266,7 +276,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -298,6 +308,26 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(environmentVariables, environmentVariables.enabled);
         await m.addColumn(environmentVariables, environmentVariables.sortOrder);
         await m.createTable(workspaceSettings);
+      }
+      if (from < 5) {
+        if (from >= 3) {
+          await m.addColumn(realtimeHistory, realtimeHistory.collectionId);
+          await m.addColumn(realtimeHistory, realtimeHistory.requestId);
+          await m.addColumn(realtimeHistory, realtimeHistory.environmentId);
+          await m.addColumn(realtimeHistory, realtimeHistory.failureCategory);
+          await m.addColumn(aiPreferences, aiPreferences.providerModel);
+          await m.addColumn(aiPreferences, aiPreferences.providerEndpoint);
+        }
+        if (from >= 4) {
+          await m.addColumn(
+            workspaceSettings,
+            workspaceSettings.realtimeRetentionDays,
+          );
+          await m.addColumn(
+            workspaceSettings,
+            workspaceSettings.realtimeMaximumCount,
+          );
+        }
       }
     },
   );

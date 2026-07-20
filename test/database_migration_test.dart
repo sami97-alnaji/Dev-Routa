@@ -6,8 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 void main() {
-  for (final version in <int>[1, 2, 3]) {
-    test('schema version $version upgrades to version 4 without reset', () async {
+  for (final version in <int>[1, 2, 3, 4]) {
+    test('schema version $version upgrades to version 5 without reset', () async {
       final directory = await Directory.systemTemp.createTemp(
         'devroute-migration-',
       );
@@ -28,6 +28,16 @@ void main() {
       final database = AppDatabase.forTesting(NativeDatabase(file));
       await database
           .customSelect('SELECT parent_folder_id FROM folders LIMIT 0')
+          .get();
+      await database
+          .customSelect(
+            'SELECT collection_id, request_id, environment_id, failure_category FROM realtime_history LIMIT 0',
+          )
+          .get();
+      await database
+          .customSelect(
+            'SELECT provider_model, provider_endpoint FROM ai_preferences LIMIT 0',
+          )
           .get();
       await database
           .customSelect(
@@ -58,7 +68,7 @@ void main() {
       final schemaVersion = await database
           .customSelect('PRAGMA user_version')
           .getSingle();
-      expect(schemaVersion.data.values.single, 4);
+      expect(schemaVersion.data.values.single, 5);
       await database.close();
       await directory.delete(recursive: true);
     });
@@ -100,6 +110,32 @@ void _createLegacySchema(sqlite.Database db, int version) {
   if (v2) {
     db.execute(
       'CREATE TABLE request_drafts (id TEXT PRIMARY KEY, request_id TEXT, title TEXT NOT NULL, payload_json TEXT NOT NULL, updated_at INTEGER NOT NULL)',
+    );
+  }
+  if (version >= 3) {
+    db.execute(
+      "CREATE TABLE realtime_configurations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, protocol TEXT NOT NULL, name TEXT NOT NULL, url TEXT NOT NULL, payload_json TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+    );
+    db.execute(
+      'CREATE TABLE realtime_drafts (id TEXT PRIMARY KEY, configuration_id TEXT, workspace_id TEXT NOT NULL, protocol TEXT NOT NULL, title TEXT NOT NULL, payload_json TEXT NOT NULL, updated_at INTEGER NOT NULL)',
+    );
+    db.execute(
+      'CREATE TABLE realtime_history (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, configuration_id TEXT, protocol TEXT NOT NULL, status TEXT NOT NULL, summary_json TEXT NOT NULL, pinned INTEGER NOT NULL DEFAULT 0, tags_json TEXT NOT NULL DEFAULT \'[]\', notes TEXT NOT NULL DEFAULT \'\', created_at INTEGER NOT NULL)',
+    );
+    db.execute(
+      'CREATE TABLE ai_preferences (id TEXT PRIMARY KEY, consent_granted INTEGER NOT NULL DEFAULT 0, provider_name TEXT, include_bodies INTEGER NOT NULL DEFAULT 0, include_headers INTEGER NOT NULL DEFAULT 0, include_history INTEGER NOT NULL DEFAULT 0, include_events INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL)',
+    );
+  }
+  if (version >= 4) {
+    db.execute('ALTER TABLE folders ADD COLUMN parent_folder_id TEXT');
+    db.execute(
+      'ALTER TABLE environment_variables ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1',
+    );
+    db.execute(
+      'ALTER TABLE environment_variables ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0',
+    );
+    db.execute(
+      'CREATE TABLE workspace_settings (workspace_id TEXT PRIMARY KEY, history_retention_days INTEGER NOT NULL DEFAULT 30, history_maximum_count INTEGER NOT NULL DEFAULT 1000, response_preview_bytes INTEGER NOT NULL DEFAULT 1048576, production_strict_mode INTEGER NOT NULL DEFAULT 1, updated_at INTEGER NOT NULL)',
     );
   }
 }

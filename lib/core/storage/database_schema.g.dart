@@ -6747,6 +6747,50 @@ class $RealtimeHistoryTable extends RealtimeHistory
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _collectionIdMeta = const VerificationMeta(
+    'collectionId',
+  );
+  @override
+  late final GeneratedColumn<String> collectionId = GeneratedColumn<String>(
+    'collection_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _requestIdMeta = const VerificationMeta(
+    'requestId',
+  );
+  @override
+  late final GeneratedColumn<String> requestId = GeneratedColumn<String>(
+    'request_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _environmentIdMeta = const VerificationMeta(
+    'environmentId',
+  );
+  @override
+  late final GeneratedColumn<String> environmentId = GeneratedColumn<String>(
+    'environment_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _failureCategoryMeta = const VerificationMeta(
+    'failureCategory',
+  );
+  @override
+  late final GeneratedColumn<String> failureCategory = GeneratedColumn<String>(
+    'failure_category',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _summaryJsonMeta = const VerificationMeta(
     'summaryJson',
   );
@@ -6811,6 +6855,10 @@ class $RealtimeHistoryTable extends RealtimeHistory
     configurationId,
     protocol,
     status,
+    collectionId,
+    requestId,
+    environmentId,
+    failureCategory,
     summaryJson,
     pinned,
     tagsJson,
@@ -6869,6 +6917,39 @@ class $RealtimeHistoryTable extends RealtimeHistory
       );
     } else if (isInserting) {
       context.missing(_statusMeta);
+    }
+    if (data.containsKey('collection_id')) {
+      context.handle(
+        _collectionIdMeta,
+        collectionId.isAcceptableOrUnknown(
+          data['collection_id']!,
+          _collectionIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('request_id')) {
+      context.handle(
+        _requestIdMeta,
+        requestId.isAcceptableOrUnknown(data['request_id']!, _requestIdMeta),
+      );
+    }
+    if (data.containsKey('environment_id')) {
+      context.handle(
+        _environmentIdMeta,
+        environmentId.isAcceptableOrUnknown(
+          data['environment_id']!,
+          _environmentIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('failure_category')) {
+      context.handle(
+        _failureCategoryMeta,
+        failureCategory.isAcceptableOrUnknown(
+          data['failure_category']!,
+          _failureCategoryMeta,
+        ),
+      );
     }
     if (data.containsKey('summary_json')) {
       context.handle(
@@ -6936,6 +7017,22 @@ class $RealtimeHistoryTable extends RealtimeHistory
         DriftSqlType.string,
         data['${effectivePrefix}status'],
       )!,
+      collectionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}collection_id'],
+      ),
+      requestId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}request_id'],
+      ),
+      environmentId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}environment_id'],
+      ),
+      failureCategory: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}failure_category'],
+      ),
       summaryJson: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}summary_json'],
@@ -6972,6 +7069,10 @@ class RealtimeHistoryData extends DataClass
   final String? configurationId;
   final String protocol;
   final String status;
+  final String? collectionId;
+  final String? requestId;
+  final String? environmentId;
+  final String? failureCategory;
   final String summaryJson;
   final bool pinned;
   final String tagsJson;
@@ -6983,6 +7084,10 @@ class RealtimeHistoryData extends DataClass
     this.configurationId,
     required this.protocol,
     required this.status,
+    this.collectionId,
+    this.requestId,
+    this.environmentId,
+    this.failureCategory,
     required this.summaryJson,
     required this.pinned,
     required this.tagsJson,
@@ -6999,6 +7104,18 @@ class RealtimeHistoryData extends DataClass
     }
     map['protocol'] = Variable<String>(protocol);
     map['status'] = Variable<String>(status);
+    if (!nullToAbsent || collectionId != null) {
+      map['collection_id'] = Variable<String>(collectionId);
+    }
+    if (!nullToAbsent || requestId != null) {
+      map['request_id'] = Variable<String>(requestId);
+    }
+    if (!nullToAbsent || environmentId != null) {
+      map['environment_id'] = Variable<String>(environmentId);
+    }
+    if (!nullToAbsent || failureCategory != null) {
+      map['failure_category'] = Variable<String>(failureCategory);
+    }
     map['summary_json'] = Variable<String>(summaryJson);
     map['pinned'] = Variable<bool>(pinned);
     map['tags_json'] = Variable<String>(tagsJson);
@@ -7016,6 +7133,18 @@ class RealtimeHistoryData extends DataClass
           : Value(configurationId),
       protocol: Value(protocol),
       status: Value(status),
+      collectionId: collectionId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(collectionId),
+      requestId: requestId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(requestId),
+      environmentId: environmentId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(environmentId),
+      failureCategory: failureCategory == null && nullToAbsent
+          ? const Value.absent()
+          : Value(failureCategory),
       summaryJson: Value(summaryJson),
       pinned: Value(pinned),
       tagsJson: Value(tagsJson),
@@ -7035,6 +7164,10 @@ class RealtimeHistoryData extends DataClass
       configurationId: serializer.fromJson<String?>(json['configurationId']),
       protocol: serializer.fromJson<String>(json['protocol']),
       status: serializer.fromJson<String>(json['status']),
+      collectionId: serializer.fromJson<String?>(json['collectionId']),
+      requestId: serializer.fromJson<String?>(json['requestId']),
+      environmentId: serializer.fromJson<String?>(json['environmentId']),
+      failureCategory: serializer.fromJson<String?>(json['failureCategory']),
       summaryJson: serializer.fromJson<String>(json['summaryJson']),
       pinned: serializer.fromJson<bool>(json['pinned']),
       tagsJson: serializer.fromJson<String>(json['tagsJson']),
@@ -7051,6 +7184,10 @@ class RealtimeHistoryData extends DataClass
       'configurationId': serializer.toJson<String?>(configurationId),
       'protocol': serializer.toJson<String>(protocol),
       'status': serializer.toJson<String>(status),
+      'collectionId': serializer.toJson<String?>(collectionId),
+      'requestId': serializer.toJson<String?>(requestId),
+      'environmentId': serializer.toJson<String?>(environmentId),
+      'failureCategory': serializer.toJson<String?>(failureCategory),
       'summaryJson': serializer.toJson<String>(summaryJson),
       'pinned': serializer.toJson<bool>(pinned),
       'tagsJson': serializer.toJson<String>(tagsJson),
@@ -7065,6 +7202,10 @@ class RealtimeHistoryData extends DataClass
     Value<String?> configurationId = const Value.absent(),
     String? protocol,
     String? status,
+    Value<String?> collectionId = const Value.absent(),
+    Value<String?> requestId = const Value.absent(),
+    Value<String?> environmentId = const Value.absent(),
+    Value<String?> failureCategory = const Value.absent(),
     String? summaryJson,
     bool? pinned,
     String? tagsJson,
@@ -7078,6 +7219,14 @@ class RealtimeHistoryData extends DataClass
         : this.configurationId,
     protocol: protocol ?? this.protocol,
     status: status ?? this.status,
+    collectionId: collectionId.present ? collectionId.value : this.collectionId,
+    requestId: requestId.present ? requestId.value : this.requestId,
+    environmentId: environmentId.present
+        ? environmentId.value
+        : this.environmentId,
+    failureCategory: failureCategory.present
+        ? failureCategory.value
+        : this.failureCategory,
     summaryJson: summaryJson ?? this.summaryJson,
     pinned: pinned ?? this.pinned,
     tagsJson: tagsJson ?? this.tagsJson,
@@ -7095,6 +7244,16 @@ class RealtimeHistoryData extends DataClass
           : this.configurationId,
       protocol: data.protocol.present ? data.protocol.value : this.protocol,
       status: data.status.present ? data.status.value : this.status,
+      collectionId: data.collectionId.present
+          ? data.collectionId.value
+          : this.collectionId,
+      requestId: data.requestId.present ? data.requestId.value : this.requestId,
+      environmentId: data.environmentId.present
+          ? data.environmentId.value
+          : this.environmentId,
+      failureCategory: data.failureCategory.present
+          ? data.failureCategory.value
+          : this.failureCategory,
       summaryJson: data.summaryJson.present
           ? data.summaryJson.value
           : this.summaryJson,
@@ -7113,6 +7272,10 @@ class RealtimeHistoryData extends DataClass
           ..write('configurationId: $configurationId, ')
           ..write('protocol: $protocol, ')
           ..write('status: $status, ')
+          ..write('collectionId: $collectionId, ')
+          ..write('requestId: $requestId, ')
+          ..write('environmentId: $environmentId, ')
+          ..write('failureCategory: $failureCategory, ')
           ..write('summaryJson: $summaryJson, ')
           ..write('pinned: $pinned, ')
           ..write('tagsJson: $tagsJson, ')
@@ -7129,6 +7292,10 @@ class RealtimeHistoryData extends DataClass
     configurationId,
     protocol,
     status,
+    collectionId,
+    requestId,
+    environmentId,
+    failureCategory,
     summaryJson,
     pinned,
     tagsJson,
@@ -7144,6 +7311,10 @@ class RealtimeHistoryData extends DataClass
           other.configurationId == this.configurationId &&
           other.protocol == this.protocol &&
           other.status == this.status &&
+          other.collectionId == this.collectionId &&
+          other.requestId == this.requestId &&
+          other.environmentId == this.environmentId &&
+          other.failureCategory == this.failureCategory &&
           other.summaryJson == this.summaryJson &&
           other.pinned == this.pinned &&
           other.tagsJson == this.tagsJson &&
@@ -7157,6 +7328,10 @@ class RealtimeHistoryCompanion extends UpdateCompanion<RealtimeHistoryData> {
   final Value<String?> configurationId;
   final Value<String> protocol;
   final Value<String> status;
+  final Value<String?> collectionId;
+  final Value<String?> requestId;
+  final Value<String?> environmentId;
+  final Value<String?> failureCategory;
   final Value<String> summaryJson;
   final Value<bool> pinned;
   final Value<String> tagsJson;
@@ -7169,6 +7344,10 @@ class RealtimeHistoryCompanion extends UpdateCompanion<RealtimeHistoryData> {
     this.configurationId = const Value.absent(),
     this.protocol = const Value.absent(),
     this.status = const Value.absent(),
+    this.collectionId = const Value.absent(),
+    this.requestId = const Value.absent(),
+    this.environmentId = const Value.absent(),
+    this.failureCategory = const Value.absent(),
     this.summaryJson = const Value.absent(),
     this.pinned = const Value.absent(),
     this.tagsJson = const Value.absent(),
@@ -7182,6 +7361,10 @@ class RealtimeHistoryCompanion extends UpdateCompanion<RealtimeHistoryData> {
     this.configurationId = const Value.absent(),
     required String protocol,
     required String status,
+    this.collectionId = const Value.absent(),
+    this.requestId = const Value.absent(),
+    this.environmentId = const Value.absent(),
+    this.failureCategory = const Value.absent(),
     required String summaryJson,
     this.pinned = const Value.absent(),
     this.tagsJson = const Value.absent(),
@@ -7200,6 +7383,10 @@ class RealtimeHistoryCompanion extends UpdateCompanion<RealtimeHistoryData> {
     Expression<String>? configurationId,
     Expression<String>? protocol,
     Expression<String>? status,
+    Expression<String>? collectionId,
+    Expression<String>? requestId,
+    Expression<String>? environmentId,
+    Expression<String>? failureCategory,
     Expression<String>? summaryJson,
     Expression<bool>? pinned,
     Expression<String>? tagsJson,
@@ -7213,6 +7400,10 @@ class RealtimeHistoryCompanion extends UpdateCompanion<RealtimeHistoryData> {
       if (configurationId != null) 'configuration_id': configurationId,
       if (protocol != null) 'protocol': protocol,
       if (status != null) 'status': status,
+      if (collectionId != null) 'collection_id': collectionId,
+      if (requestId != null) 'request_id': requestId,
+      if (environmentId != null) 'environment_id': environmentId,
+      if (failureCategory != null) 'failure_category': failureCategory,
       if (summaryJson != null) 'summary_json': summaryJson,
       if (pinned != null) 'pinned': pinned,
       if (tagsJson != null) 'tags_json': tagsJson,
@@ -7228,6 +7419,10 @@ class RealtimeHistoryCompanion extends UpdateCompanion<RealtimeHistoryData> {
     Value<String?>? configurationId,
     Value<String>? protocol,
     Value<String>? status,
+    Value<String?>? collectionId,
+    Value<String?>? requestId,
+    Value<String?>? environmentId,
+    Value<String?>? failureCategory,
     Value<String>? summaryJson,
     Value<bool>? pinned,
     Value<String>? tagsJson,
@@ -7241,6 +7436,10 @@ class RealtimeHistoryCompanion extends UpdateCompanion<RealtimeHistoryData> {
       configurationId: configurationId ?? this.configurationId,
       protocol: protocol ?? this.protocol,
       status: status ?? this.status,
+      collectionId: collectionId ?? this.collectionId,
+      requestId: requestId ?? this.requestId,
+      environmentId: environmentId ?? this.environmentId,
+      failureCategory: failureCategory ?? this.failureCategory,
       summaryJson: summaryJson ?? this.summaryJson,
       pinned: pinned ?? this.pinned,
       tagsJson: tagsJson ?? this.tagsJson,
@@ -7267,6 +7466,18 @@ class RealtimeHistoryCompanion extends UpdateCompanion<RealtimeHistoryData> {
     }
     if (status.present) {
       map['status'] = Variable<String>(status.value);
+    }
+    if (collectionId.present) {
+      map['collection_id'] = Variable<String>(collectionId.value);
+    }
+    if (requestId.present) {
+      map['request_id'] = Variable<String>(requestId.value);
+    }
+    if (environmentId.present) {
+      map['environment_id'] = Variable<String>(environmentId.value);
+    }
+    if (failureCategory.present) {
+      map['failure_category'] = Variable<String>(failureCategory.value);
     }
     if (summaryJson.present) {
       map['summary_json'] = Variable<String>(summaryJson.value);
@@ -7297,6 +7508,10 @@ class RealtimeHistoryCompanion extends UpdateCompanion<RealtimeHistoryData> {
           ..write('configurationId: $configurationId, ')
           ..write('protocol: $protocol, ')
           ..write('status: $status, ')
+          ..write('collectionId: $collectionId, ')
+          ..write('requestId: $requestId, ')
+          ..write('environmentId: $environmentId, ')
+          ..write('failureCategory: $failureCategory, ')
           ..write('summaryJson: $summaryJson, ')
           ..write('pinned: $pinned, ')
           ..write('tagsJson: $tagsJson, ')
@@ -7344,6 +7559,28 @@ class $AiPreferencesTable extends AiPreferences
   @override
   late final GeneratedColumn<String> providerName = GeneratedColumn<String>(
     'provider_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _providerModelMeta = const VerificationMeta(
+    'providerModel',
+  );
+  @override
+  late final GeneratedColumn<String> providerModel = GeneratedColumn<String>(
+    'provider_model',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _providerEndpointMeta = const VerificationMeta(
+    'providerEndpoint',
+  );
+  @override
+  late final GeneratedColumn<String> providerEndpoint = GeneratedColumn<String>(
+    'provider_endpoint',
     aliasedName,
     true,
     type: DriftSqlType.string,
@@ -7425,6 +7662,8 @@ class $AiPreferencesTable extends AiPreferences
     id,
     consentGranted,
     providerName,
+    providerModel,
+    providerEndpoint,
     includeBodies,
     includeHeaders,
     includeHistory,
@@ -7463,6 +7702,24 @@ class $AiPreferencesTable extends AiPreferences
         providerName.isAcceptableOrUnknown(
           data['provider_name']!,
           _providerNameMeta,
+        ),
+      );
+    }
+    if (data.containsKey('provider_model')) {
+      context.handle(
+        _providerModelMeta,
+        providerModel.isAcceptableOrUnknown(
+          data['provider_model']!,
+          _providerModelMeta,
+        ),
+      );
+    }
+    if (data.containsKey('provider_endpoint')) {
+      context.handle(
+        _providerEndpointMeta,
+        providerEndpoint.isAcceptableOrUnknown(
+          data['provider_endpoint']!,
+          _providerEndpointMeta,
         ),
       );
     }
@@ -7531,6 +7788,14 @@ class $AiPreferencesTable extends AiPreferences
         DriftSqlType.string,
         data['${effectivePrefix}provider_name'],
       ),
+      providerModel: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}provider_model'],
+      ),
+      providerEndpoint: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}provider_endpoint'],
+      ),
       includeBodies: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}include_bodies'],
@@ -7564,6 +7829,8 @@ class AiPreference extends DataClass implements Insertable<AiPreference> {
   final String id;
   final bool consentGranted;
   final String? providerName;
+  final String? providerModel;
+  final String? providerEndpoint;
   final bool includeBodies;
   final bool includeHeaders;
   final bool includeHistory;
@@ -7573,6 +7840,8 @@ class AiPreference extends DataClass implements Insertable<AiPreference> {
     required this.id,
     required this.consentGranted,
     this.providerName,
+    this.providerModel,
+    this.providerEndpoint,
     required this.includeBodies,
     required this.includeHeaders,
     required this.includeHistory,
@@ -7586,6 +7855,12 @@ class AiPreference extends DataClass implements Insertable<AiPreference> {
     map['consent_granted'] = Variable<bool>(consentGranted);
     if (!nullToAbsent || providerName != null) {
       map['provider_name'] = Variable<String>(providerName);
+    }
+    if (!nullToAbsent || providerModel != null) {
+      map['provider_model'] = Variable<String>(providerModel);
+    }
+    if (!nullToAbsent || providerEndpoint != null) {
+      map['provider_endpoint'] = Variable<String>(providerEndpoint);
     }
     map['include_bodies'] = Variable<bool>(includeBodies);
     map['include_headers'] = Variable<bool>(includeHeaders);
@@ -7602,6 +7877,12 @@ class AiPreference extends DataClass implements Insertable<AiPreference> {
       providerName: providerName == null && nullToAbsent
           ? const Value.absent()
           : Value(providerName),
+      providerModel: providerModel == null && nullToAbsent
+          ? const Value.absent()
+          : Value(providerModel),
+      providerEndpoint: providerEndpoint == null && nullToAbsent
+          ? const Value.absent()
+          : Value(providerEndpoint),
       includeBodies: Value(includeBodies),
       includeHeaders: Value(includeHeaders),
       includeHistory: Value(includeHistory),
@@ -7619,6 +7900,8 @@ class AiPreference extends DataClass implements Insertable<AiPreference> {
       id: serializer.fromJson<String>(json['id']),
       consentGranted: serializer.fromJson<bool>(json['consentGranted']),
       providerName: serializer.fromJson<String?>(json['providerName']),
+      providerModel: serializer.fromJson<String?>(json['providerModel']),
+      providerEndpoint: serializer.fromJson<String?>(json['providerEndpoint']),
       includeBodies: serializer.fromJson<bool>(json['includeBodies']),
       includeHeaders: serializer.fromJson<bool>(json['includeHeaders']),
       includeHistory: serializer.fromJson<bool>(json['includeHistory']),
@@ -7633,6 +7916,8 @@ class AiPreference extends DataClass implements Insertable<AiPreference> {
       'id': serializer.toJson<String>(id),
       'consentGranted': serializer.toJson<bool>(consentGranted),
       'providerName': serializer.toJson<String?>(providerName),
+      'providerModel': serializer.toJson<String?>(providerModel),
+      'providerEndpoint': serializer.toJson<String?>(providerEndpoint),
       'includeBodies': serializer.toJson<bool>(includeBodies),
       'includeHeaders': serializer.toJson<bool>(includeHeaders),
       'includeHistory': serializer.toJson<bool>(includeHistory),
@@ -7645,6 +7930,8 @@ class AiPreference extends DataClass implements Insertable<AiPreference> {
     String? id,
     bool? consentGranted,
     Value<String?> providerName = const Value.absent(),
+    Value<String?> providerModel = const Value.absent(),
+    Value<String?> providerEndpoint = const Value.absent(),
     bool? includeBodies,
     bool? includeHeaders,
     bool? includeHistory,
@@ -7654,6 +7941,12 @@ class AiPreference extends DataClass implements Insertable<AiPreference> {
     id: id ?? this.id,
     consentGranted: consentGranted ?? this.consentGranted,
     providerName: providerName.present ? providerName.value : this.providerName,
+    providerModel: providerModel.present
+        ? providerModel.value
+        : this.providerModel,
+    providerEndpoint: providerEndpoint.present
+        ? providerEndpoint.value
+        : this.providerEndpoint,
     includeBodies: includeBodies ?? this.includeBodies,
     includeHeaders: includeHeaders ?? this.includeHeaders,
     includeHistory: includeHistory ?? this.includeHistory,
@@ -7669,6 +7962,12 @@ class AiPreference extends DataClass implements Insertable<AiPreference> {
       providerName: data.providerName.present
           ? data.providerName.value
           : this.providerName,
+      providerModel: data.providerModel.present
+          ? data.providerModel.value
+          : this.providerModel,
+      providerEndpoint: data.providerEndpoint.present
+          ? data.providerEndpoint.value
+          : this.providerEndpoint,
       includeBodies: data.includeBodies.present
           ? data.includeBodies.value
           : this.includeBodies,
@@ -7691,6 +7990,8 @@ class AiPreference extends DataClass implements Insertable<AiPreference> {
           ..write('id: $id, ')
           ..write('consentGranted: $consentGranted, ')
           ..write('providerName: $providerName, ')
+          ..write('providerModel: $providerModel, ')
+          ..write('providerEndpoint: $providerEndpoint, ')
           ..write('includeBodies: $includeBodies, ')
           ..write('includeHeaders: $includeHeaders, ')
           ..write('includeHistory: $includeHistory, ')
@@ -7705,6 +8006,8 @@ class AiPreference extends DataClass implements Insertable<AiPreference> {
     id,
     consentGranted,
     providerName,
+    providerModel,
+    providerEndpoint,
     includeBodies,
     includeHeaders,
     includeHistory,
@@ -7718,6 +8021,8 @@ class AiPreference extends DataClass implements Insertable<AiPreference> {
           other.id == this.id &&
           other.consentGranted == this.consentGranted &&
           other.providerName == this.providerName &&
+          other.providerModel == this.providerModel &&
+          other.providerEndpoint == this.providerEndpoint &&
           other.includeBodies == this.includeBodies &&
           other.includeHeaders == this.includeHeaders &&
           other.includeHistory == this.includeHistory &&
@@ -7729,6 +8034,8 @@ class AiPreferencesCompanion extends UpdateCompanion<AiPreference> {
   final Value<String> id;
   final Value<bool> consentGranted;
   final Value<String?> providerName;
+  final Value<String?> providerModel;
+  final Value<String?> providerEndpoint;
   final Value<bool> includeBodies;
   final Value<bool> includeHeaders;
   final Value<bool> includeHistory;
@@ -7739,6 +8046,8 @@ class AiPreferencesCompanion extends UpdateCompanion<AiPreference> {
     this.id = const Value.absent(),
     this.consentGranted = const Value.absent(),
     this.providerName = const Value.absent(),
+    this.providerModel = const Value.absent(),
+    this.providerEndpoint = const Value.absent(),
     this.includeBodies = const Value.absent(),
     this.includeHeaders = const Value.absent(),
     this.includeHistory = const Value.absent(),
@@ -7750,6 +8059,8 @@ class AiPreferencesCompanion extends UpdateCompanion<AiPreference> {
     required String id,
     this.consentGranted = const Value.absent(),
     this.providerName = const Value.absent(),
+    this.providerModel = const Value.absent(),
+    this.providerEndpoint = const Value.absent(),
     this.includeBodies = const Value.absent(),
     this.includeHeaders = const Value.absent(),
     this.includeHistory = const Value.absent(),
@@ -7762,6 +8073,8 @@ class AiPreferencesCompanion extends UpdateCompanion<AiPreference> {
     Expression<String>? id,
     Expression<bool>? consentGranted,
     Expression<String>? providerName,
+    Expression<String>? providerModel,
+    Expression<String>? providerEndpoint,
     Expression<bool>? includeBodies,
     Expression<bool>? includeHeaders,
     Expression<bool>? includeHistory,
@@ -7773,6 +8086,8 @@ class AiPreferencesCompanion extends UpdateCompanion<AiPreference> {
       if (id != null) 'id': id,
       if (consentGranted != null) 'consent_granted': consentGranted,
       if (providerName != null) 'provider_name': providerName,
+      if (providerModel != null) 'provider_model': providerModel,
+      if (providerEndpoint != null) 'provider_endpoint': providerEndpoint,
       if (includeBodies != null) 'include_bodies': includeBodies,
       if (includeHeaders != null) 'include_headers': includeHeaders,
       if (includeHistory != null) 'include_history': includeHistory,
@@ -7786,6 +8101,8 @@ class AiPreferencesCompanion extends UpdateCompanion<AiPreference> {
     Value<String>? id,
     Value<bool>? consentGranted,
     Value<String?>? providerName,
+    Value<String?>? providerModel,
+    Value<String?>? providerEndpoint,
     Value<bool>? includeBodies,
     Value<bool>? includeHeaders,
     Value<bool>? includeHistory,
@@ -7797,6 +8114,8 @@ class AiPreferencesCompanion extends UpdateCompanion<AiPreference> {
       id: id ?? this.id,
       consentGranted: consentGranted ?? this.consentGranted,
       providerName: providerName ?? this.providerName,
+      providerModel: providerModel ?? this.providerModel,
+      providerEndpoint: providerEndpoint ?? this.providerEndpoint,
       includeBodies: includeBodies ?? this.includeBodies,
       includeHeaders: includeHeaders ?? this.includeHeaders,
       includeHistory: includeHistory ?? this.includeHistory,
@@ -7817,6 +8136,12 @@ class AiPreferencesCompanion extends UpdateCompanion<AiPreference> {
     }
     if (providerName.present) {
       map['provider_name'] = Variable<String>(providerName.value);
+    }
+    if (providerModel.present) {
+      map['provider_model'] = Variable<String>(providerModel.value);
+    }
+    if (providerEndpoint.present) {
+      map['provider_endpoint'] = Variable<String>(providerEndpoint.value);
     }
     if (includeBodies.present) {
       map['include_bodies'] = Variable<bool>(includeBodies.value);
@@ -7845,6 +8170,8 @@ class AiPreferencesCompanion extends UpdateCompanion<AiPreference> {
           ..write('id: $id, ')
           ..write('consentGranted: $consentGranted, ')
           ..write('providerName: $providerName, ')
+          ..write('providerModel: $providerModel, ')
+          ..write('providerEndpoint: $providerEndpoint, ')
           ..write('includeBodies: $includeBodies, ')
           ..write('includeHeaders: $includeHeaders, ')
           ..write('includeHistory: $includeHistory, ')
@@ -7920,6 +8247,28 @@ class $WorkspaceSettingsTable extends WorkspaceSettings
     ),
     defaultValue: const Constant(true),
   );
+  static const VerificationMeta _realtimeRetentionDaysMeta =
+      const VerificationMeta('realtimeRetentionDays');
+  @override
+  late final GeneratedColumn<int> realtimeRetentionDays = GeneratedColumn<int>(
+    'realtime_retention_days',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(30),
+  );
+  static const VerificationMeta _realtimeMaximumCountMeta =
+      const VerificationMeta('realtimeMaximumCount');
+  @override
+  late final GeneratedColumn<int> realtimeMaximumCount = GeneratedColumn<int>(
+    'realtime_maximum_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(500),
+  );
   static const VerificationMeta _updatedAtMeta = const VerificationMeta(
     'updatedAt',
   );
@@ -7938,6 +8287,8 @@ class $WorkspaceSettingsTable extends WorkspaceSettings
     historyMaximumCount,
     responsePreviewBytes,
     productionStrictMode,
+    realtimeRetentionDays,
+    realtimeMaximumCount,
     updatedAt,
   ];
   @override
@@ -7999,6 +8350,24 @@ class $WorkspaceSettingsTable extends WorkspaceSettings
         ),
       );
     }
+    if (data.containsKey('realtime_retention_days')) {
+      context.handle(
+        _realtimeRetentionDaysMeta,
+        realtimeRetentionDays.isAcceptableOrUnknown(
+          data['realtime_retention_days']!,
+          _realtimeRetentionDaysMeta,
+        ),
+      );
+    }
+    if (data.containsKey('realtime_maximum_count')) {
+      context.handle(
+        _realtimeMaximumCountMeta,
+        realtimeMaximumCount.isAcceptableOrUnknown(
+          data['realtime_maximum_count']!,
+          _realtimeMaximumCountMeta,
+        ),
+      );
+    }
     if (data.containsKey('updated_at')) {
       context.handle(
         _updatedAtMeta,
@@ -8036,6 +8405,14 @@ class $WorkspaceSettingsTable extends WorkspaceSettings
         DriftSqlType.bool,
         data['${effectivePrefix}production_strict_mode'],
       )!,
+      realtimeRetentionDays: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}realtime_retention_days'],
+      )!,
+      realtimeMaximumCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}realtime_maximum_count'],
+      )!,
       updatedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
@@ -8056,6 +8433,8 @@ class WorkspaceSetting extends DataClass
   final int historyMaximumCount;
   final int responsePreviewBytes;
   final bool productionStrictMode;
+  final int realtimeRetentionDays;
+  final int realtimeMaximumCount;
   final DateTime updatedAt;
   const WorkspaceSetting({
     required this.workspaceId,
@@ -8063,6 +8442,8 @@ class WorkspaceSetting extends DataClass
     required this.historyMaximumCount,
     required this.responsePreviewBytes,
     required this.productionStrictMode,
+    required this.realtimeRetentionDays,
+    required this.realtimeMaximumCount,
     required this.updatedAt,
   });
   @override
@@ -8073,6 +8454,8 @@ class WorkspaceSetting extends DataClass
     map['history_maximum_count'] = Variable<int>(historyMaximumCount);
     map['response_preview_bytes'] = Variable<int>(responsePreviewBytes);
     map['production_strict_mode'] = Variable<bool>(productionStrictMode);
+    map['realtime_retention_days'] = Variable<int>(realtimeRetentionDays);
+    map['realtime_maximum_count'] = Variable<int>(realtimeMaximumCount);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
   }
@@ -8084,6 +8467,8 @@ class WorkspaceSetting extends DataClass
       historyMaximumCount: Value(historyMaximumCount),
       responsePreviewBytes: Value(responsePreviewBytes),
       productionStrictMode: Value(productionStrictMode),
+      realtimeRetentionDays: Value(realtimeRetentionDays),
+      realtimeMaximumCount: Value(realtimeMaximumCount),
       updatedAt: Value(updatedAt),
     );
   }
@@ -8107,6 +8492,12 @@ class WorkspaceSetting extends DataClass
       productionStrictMode: serializer.fromJson<bool>(
         json['productionStrictMode'],
       ),
+      realtimeRetentionDays: serializer.fromJson<int>(
+        json['realtimeRetentionDays'],
+      ),
+      realtimeMaximumCount: serializer.fromJson<int>(
+        json['realtimeMaximumCount'],
+      ),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
   }
@@ -8119,6 +8510,8 @@ class WorkspaceSetting extends DataClass
       'historyMaximumCount': serializer.toJson<int>(historyMaximumCount),
       'responsePreviewBytes': serializer.toJson<int>(responsePreviewBytes),
       'productionStrictMode': serializer.toJson<bool>(productionStrictMode),
+      'realtimeRetentionDays': serializer.toJson<int>(realtimeRetentionDays),
+      'realtimeMaximumCount': serializer.toJson<int>(realtimeMaximumCount),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
   }
@@ -8129,6 +8522,8 @@ class WorkspaceSetting extends DataClass
     int? historyMaximumCount,
     int? responsePreviewBytes,
     bool? productionStrictMode,
+    int? realtimeRetentionDays,
+    int? realtimeMaximumCount,
     DateTime? updatedAt,
   }) => WorkspaceSetting(
     workspaceId: workspaceId ?? this.workspaceId,
@@ -8136,6 +8531,8 @@ class WorkspaceSetting extends DataClass
     historyMaximumCount: historyMaximumCount ?? this.historyMaximumCount,
     responsePreviewBytes: responsePreviewBytes ?? this.responsePreviewBytes,
     productionStrictMode: productionStrictMode ?? this.productionStrictMode,
+    realtimeRetentionDays: realtimeRetentionDays ?? this.realtimeRetentionDays,
+    realtimeMaximumCount: realtimeMaximumCount ?? this.realtimeMaximumCount,
     updatedAt: updatedAt ?? this.updatedAt,
   );
   WorkspaceSetting copyWithCompanion(WorkspaceSettingsCompanion data) {
@@ -8155,6 +8552,12 @@ class WorkspaceSetting extends DataClass
       productionStrictMode: data.productionStrictMode.present
           ? data.productionStrictMode.value
           : this.productionStrictMode,
+      realtimeRetentionDays: data.realtimeRetentionDays.present
+          ? data.realtimeRetentionDays.value
+          : this.realtimeRetentionDays,
+      realtimeMaximumCount: data.realtimeMaximumCount.present
+          ? data.realtimeMaximumCount.value
+          : this.realtimeMaximumCount,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
   }
@@ -8167,6 +8570,8 @@ class WorkspaceSetting extends DataClass
           ..write('historyMaximumCount: $historyMaximumCount, ')
           ..write('responsePreviewBytes: $responsePreviewBytes, ')
           ..write('productionStrictMode: $productionStrictMode, ')
+          ..write('realtimeRetentionDays: $realtimeRetentionDays, ')
+          ..write('realtimeMaximumCount: $realtimeMaximumCount, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
@@ -8179,6 +8584,8 @@ class WorkspaceSetting extends DataClass
     historyMaximumCount,
     responsePreviewBytes,
     productionStrictMode,
+    realtimeRetentionDays,
+    realtimeMaximumCount,
     updatedAt,
   );
   @override
@@ -8190,6 +8597,8 @@ class WorkspaceSetting extends DataClass
           other.historyMaximumCount == this.historyMaximumCount &&
           other.responsePreviewBytes == this.responsePreviewBytes &&
           other.productionStrictMode == this.productionStrictMode &&
+          other.realtimeRetentionDays == this.realtimeRetentionDays &&
+          other.realtimeMaximumCount == this.realtimeMaximumCount &&
           other.updatedAt == this.updatedAt);
 }
 
@@ -8199,6 +8608,8 @@ class WorkspaceSettingsCompanion extends UpdateCompanion<WorkspaceSetting> {
   final Value<int> historyMaximumCount;
   final Value<int> responsePreviewBytes;
   final Value<bool> productionStrictMode;
+  final Value<int> realtimeRetentionDays;
+  final Value<int> realtimeMaximumCount;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
   const WorkspaceSettingsCompanion({
@@ -8207,6 +8618,8 @@ class WorkspaceSettingsCompanion extends UpdateCompanion<WorkspaceSetting> {
     this.historyMaximumCount = const Value.absent(),
     this.responsePreviewBytes = const Value.absent(),
     this.productionStrictMode = const Value.absent(),
+    this.realtimeRetentionDays = const Value.absent(),
+    this.realtimeMaximumCount = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -8216,6 +8629,8 @@ class WorkspaceSettingsCompanion extends UpdateCompanion<WorkspaceSetting> {
     this.historyMaximumCount = const Value.absent(),
     this.responsePreviewBytes = const Value.absent(),
     this.productionStrictMode = const Value.absent(),
+    this.realtimeRetentionDays = const Value.absent(),
+    this.realtimeMaximumCount = const Value.absent(),
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
   }) : workspaceId = Value(workspaceId),
@@ -8226,6 +8641,8 @@ class WorkspaceSettingsCompanion extends UpdateCompanion<WorkspaceSetting> {
     Expression<int>? historyMaximumCount,
     Expression<int>? responsePreviewBytes,
     Expression<bool>? productionStrictMode,
+    Expression<int>? realtimeRetentionDays,
+    Expression<int>? realtimeMaximumCount,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
   }) {
@@ -8239,6 +8656,10 @@ class WorkspaceSettingsCompanion extends UpdateCompanion<WorkspaceSetting> {
         'response_preview_bytes': responsePreviewBytes,
       if (productionStrictMode != null)
         'production_strict_mode': productionStrictMode,
+      if (realtimeRetentionDays != null)
+        'realtime_retention_days': realtimeRetentionDays,
+      if (realtimeMaximumCount != null)
+        'realtime_maximum_count': realtimeMaximumCount,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -8250,6 +8671,8 @@ class WorkspaceSettingsCompanion extends UpdateCompanion<WorkspaceSetting> {
     Value<int>? historyMaximumCount,
     Value<int>? responsePreviewBytes,
     Value<bool>? productionStrictMode,
+    Value<int>? realtimeRetentionDays,
+    Value<int>? realtimeMaximumCount,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
   }) {
@@ -8259,6 +8682,9 @@ class WorkspaceSettingsCompanion extends UpdateCompanion<WorkspaceSetting> {
       historyMaximumCount: historyMaximumCount ?? this.historyMaximumCount,
       responsePreviewBytes: responsePreviewBytes ?? this.responsePreviewBytes,
       productionStrictMode: productionStrictMode ?? this.productionStrictMode,
+      realtimeRetentionDays:
+          realtimeRetentionDays ?? this.realtimeRetentionDays,
+      realtimeMaximumCount: realtimeMaximumCount ?? this.realtimeMaximumCount,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
     );
@@ -8284,6 +8710,14 @@ class WorkspaceSettingsCompanion extends UpdateCompanion<WorkspaceSetting> {
         productionStrictMode.value,
       );
     }
+    if (realtimeRetentionDays.present) {
+      map['realtime_retention_days'] = Variable<int>(
+        realtimeRetentionDays.value,
+      );
+    }
+    if (realtimeMaximumCount.present) {
+      map['realtime_maximum_count'] = Variable<int>(realtimeMaximumCount.value);
+    }
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
@@ -8301,6 +8735,8 @@ class WorkspaceSettingsCompanion extends UpdateCompanion<WorkspaceSetting> {
           ..write('historyMaximumCount: $historyMaximumCount, ')
           ..write('responsePreviewBytes: $responsePreviewBytes, ')
           ..write('productionStrictMode: $productionStrictMode, ')
+          ..write('realtimeRetentionDays: $realtimeRetentionDays, ')
+          ..write('realtimeMaximumCount: $realtimeMaximumCount, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -11988,6 +12424,10 @@ typedef $$RealtimeHistoryTableCreateCompanionBuilder =
       Value<String?> configurationId,
       required String protocol,
       required String status,
+      Value<String?> collectionId,
+      Value<String?> requestId,
+      Value<String?> environmentId,
+      Value<String?> failureCategory,
       required String summaryJson,
       Value<bool> pinned,
       Value<String> tagsJson,
@@ -12002,6 +12442,10 @@ typedef $$RealtimeHistoryTableUpdateCompanionBuilder =
       Value<String?> configurationId,
       Value<String> protocol,
       Value<String> status,
+      Value<String?> collectionId,
+      Value<String?> requestId,
+      Value<String?> environmentId,
+      Value<String?> failureCategory,
       Value<String> summaryJson,
       Value<bool> pinned,
       Value<String> tagsJson,
@@ -12041,6 +12485,26 @@ class $$RealtimeHistoryTableFilterComposer
 
   ColumnFilters<String> get status => $composableBuilder(
     column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get collectionId => $composableBuilder(
+    column: $table.collectionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get requestId => $composableBuilder(
+    column: $table.requestId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get environmentId => $composableBuilder(
+    column: $table.environmentId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get failureCategory => $composableBuilder(
+    column: $table.failureCategory,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -12104,6 +12568,26 @@ class $$RealtimeHistoryTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get collectionId => $composableBuilder(
+    column: $table.collectionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get requestId => $composableBuilder(
+    column: $table.requestId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get environmentId => $composableBuilder(
+    column: $table.environmentId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get failureCategory => $composableBuilder(
+    column: $table.failureCategory,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get summaryJson => $composableBuilder(
     column: $table.summaryJson,
     builder: (column) => ColumnOrderings(column),
@@ -12157,6 +12641,24 @@ class $$RealtimeHistoryTableAnnotationComposer
 
   GeneratedColumn<String> get status =>
       $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get collectionId => $composableBuilder(
+    column: $table.collectionId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get requestId =>
+      $composableBuilder(column: $table.requestId, builder: (column) => column);
+
+  GeneratedColumn<String> get environmentId => $composableBuilder(
+    column: $table.environmentId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get failureCategory => $composableBuilder(
+    column: $table.failureCategory,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get summaryJson => $composableBuilder(
     column: $table.summaryJson,
@@ -12218,6 +12720,10 @@ class $$RealtimeHistoryTableTableManager
                 Value<String?> configurationId = const Value.absent(),
                 Value<String> protocol = const Value.absent(),
                 Value<String> status = const Value.absent(),
+                Value<String?> collectionId = const Value.absent(),
+                Value<String?> requestId = const Value.absent(),
+                Value<String?> environmentId = const Value.absent(),
+                Value<String?> failureCategory = const Value.absent(),
                 Value<String> summaryJson = const Value.absent(),
                 Value<bool> pinned = const Value.absent(),
                 Value<String> tagsJson = const Value.absent(),
@@ -12230,6 +12736,10 @@ class $$RealtimeHistoryTableTableManager
                 configurationId: configurationId,
                 protocol: protocol,
                 status: status,
+                collectionId: collectionId,
+                requestId: requestId,
+                environmentId: environmentId,
+                failureCategory: failureCategory,
                 summaryJson: summaryJson,
                 pinned: pinned,
                 tagsJson: tagsJson,
@@ -12244,6 +12754,10 @@ class $$RealtimeHistoryTableTableManager
                 Value<String?> configurationId = const Value.absent(),
                 required String protocol,
                 required String status,
+                Value<String?> collectionId = const Value.absent(),
+                Value<String?> requestId = const Value.absent(),
+                Value<String?> environmentId = const Value.absent(),
+                Value<String?> failureCategory = const Value.absent(),
                 required String summaryJson,
                 Value<bool> pinned = const Value.absent(),
                 Value<String> tagsJson = const Value.absent(),
@@ -12256,6 +12770,10 @@ class $$RealtimeHistoryTableTableManager
                 configurationId: configurationId,
                 protocol: protocol,
                 status: status,
+                collectionId: collectionId,
+                requestId: requestId,
+                environmentId: environmentId,
+                failureCategory: failureCategory,
                 summaryJson: summaryJson,
                 pinned: pinned,
                 tagsJson: tagsJson,
@@ -12297,6 +12815,8 @@ typedef $$AiPreferencesTableCreateCompanionBuilder =
       required String id,
       Value<bool> consentGranted,
       Value<String?> providerName,
+      Value<String?> providerModel,
+      Value<String?> providerEndpoint,
       Value<bool> includeBodies,
       Value<bool> includeHeaders,
       Value<bool> includeHistory,
@@ -12309,6 +12829,8 @@ typedef $$AiPreferencesTableUpdateCompanionBuilder =
       Value<String> id,
       Value<bool> consentGranted,
       Value<String?> providerName,
+      Value<String?> providerModel,
+      Value<String?> providerEndpoint,
       Value<bool> includeBodies,
       Value<bool> includeHeaders,
       Value<bool> includeHistory,
@@ -12338,6 +12860,16 @@ class $$AiPreferencesTableFilterComposer
 
   ColumnFilters<String> get providerName => $composableBuilder(
     column: $table.providerName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get providerModel => $composableBuilder(
+    column: $table.providerModel,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get providerEndpoint => $composableBuilder(
+    column: $table.providerEndpoint,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -12391,6 +12923,16 @@ class $$AiPreferencesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get providerModel => $composableBuilder(
+    column: $table.providerModel,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get providerEndpoint => $composableBuilder(
+    column: $table.providerEndpoint,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<bool> get includeBodies => $composableBuilder(
     column: $table.includeBodies,
     builder: (column) => ColumnOrderings(column),
@@ -12436,6 +12978,16 @@ class $$AiPreferencesTableAnnotationComposer
 
   GeneratedColumn<String> get providerName => $composableBuilder(
     column: $table.providerName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get providerModel => $composableBuilder(
+    column: $table.providerModel,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get providerEndpoint => $composableBuilder(
+    column: $table.providerEndpoint,
     builder: (column) => column,
   );
 
@@ -12497,6 +13049,8 @@ class $$AiPreferencesTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<bool> consentGranted = const Value.absent(),
                 Value<String?> providerName = const Value.absent(),
+                Value<String?> providerModel = const Value.absent(),
+                Value<String?> providerEndpoint = const Value.absent(),
                 Value<bool> includeBodies = const Value.absent(),
                 Value<bool> includeHeaders = const Value.absent(),
                 Value<bool> includeHistory = const Value.absent(),
@@ -12507,6 +13061,8 @@ class $$AiPreferencesTableTableManager
                 id: id,
                 consentGranted: consentGranted,
                 providerName: providerName,
+                providerModel: providerModel,
+                providerEndpoint: providerEndpoint,
                 includeBodies: includeBodies,
                 includeHeaders: includeHeaders,
                 includeHistory: includeHistory,
@@ -12519,6 +13075,8 @@ class $$AiPreferencesTableTableManager
                 required String id,
                 Value<bool> consentGranted = const Value.absent(),
                 Value<String?> providerName = const Value.absent(),
+                Value<String?> providerModel = const Value.absent(),
+                Value<String?> providerEndpoint = const Value.absent(),
                 Value<bool> includeBodies = const Value.absent(),
                 Value<bool> includeHeaders = const Value.absent(),
                 Value<bool> includeHistory = const Value.absent(),
@@ -12529,6 +13087,8 @@ class $$AiPreferencesTableTableManager
                 id: id,
                 consentGranted: consentGranted,
                 providerName: providerName,
+                providerModel: providerModel,
+                providerEndpoint: providerEndpoint,
                 includeBodies: includeBodies,
                 includeHeaders: includeHeaders,
                 includeHistory: includeHistory,
@@ -12568,6 +13128,8 @@ typedef $$WorkspaceSettingsTableCreateCompanionBuilder =
       Value<int> historyMaximumCount,
       Value<int> responsePreviewBytes,
       Value<bool> productionStrictMode,
+      Value<int> realtimeRetentionDays,
+      Value<int> realtimeMaximumCount,
       required DateTime updatedAt,
       Value<int> rowid,
     });
@@ -12578,6 +13140,8 @@ typedef $$WorkspaceSettingsTableUpdateCompanionBuilder =
       Value<int> historyMaximumCount,
       Value<int> responsePreviewBytes,
       Value<bool> productionStrictMode,
+      Value<int> realtimeRetentionDays,
+      Value<int> realtimeMaximumCount,
       Value<DateTime> updatedAt,
       Value<int> rowid,
     });
@@ -12613,6 +13177,16 @@ class $$WorkspaceSettingsTableFilterComposer
 
   ColumnFilters<bool> get productionStrictMode => $composableBuilder(
     column: $table.productionStrictMode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get realtimeRetentionDays => $composableBuilder(
+    column: $table.realtimeRetentionDays,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get realtimeMaximumCount => $composableBuilder(
+    column: $table.realtimeMaximumCount,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -12656,6 +13230,16 @@ class $$WorkspaceSettingsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get realtimeRetentionDays => $composableBuilder(
+    column: $table.realtimeRetentionDays,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get realtimeMaximumCount => $composableBuilder(
+    column: $table.realtimeMaximumCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
@@ -12693,6 +13277,16 @@ class $$WorkspaceSettingsTableAnnotationComposer
 
   GeneratedColumn<bool> get productionStrictMode => $composableBuilder(
     column: $table.productionStrictMode,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get realtimeRetentionDays => $composableBuilder(
+    column: $table.realtimeRetentionDays,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get realtimeMaximumCount => $composableBuilder(
+    column: $table.realtimeMaximumCount,
     builder: (column) => column,
   );
 
@@ -12745,6 +13339,8 @@ class $$WorkspaceSettingsTableTableManager
                 Value<int> historyMaximumCount = const Value.absent(),
                 Value<int> responsePreviewBytes = const Value.absent(),
                 Value<bool> productionStrictMode = const Value.absent(),
+                Value<int> realtimeRetentionDays = const Value.absent(),
+                Value<int> realtimeMaximumCount = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => WorkspaceSettingsCompanion(
@@ -12753,6 +13349,8 @@ class $$WorkspaceSettingsTableTableManager
                 historyMaximumCount: historyMaximumCount,
                 responsePreviewBytes: responsePreviewBytes,
                 productionStrictMode: productionStrictMode,
+                realtimeRetentionDays: realtimeRetentionDays,
+                realtimeMaximumCount: realtimeMaximumCount,
                 updatedAt: updatedAt,
                 rowid: rowid,
               ),
@@ -12763,6 +13361,8 @@ class $$WorkspaceSettingsTableTableManager
                 Value<int> historyMaximumCount = const Value.absent(),
                 Value<int> responsePreviewBytes = const Value.absent(),
                 Value<bool> productionStrictMode = const Value.absent(),
+                Value<int> realtimeRetentionDays = const Value.absent(),
+                Value<int> realtimeMaximumCount = const Value.absent(),
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
               }) => WorkspaceSettingsCompanion.insert(
@@ -12771,6 +13371,8 @@ class $$WorkspaceSettingsTableTableManager
                 historyMaximumCount: historyMaximumCount,
                 responsePreviewBytes: responsePreviewBytes,
                 productionStrictMode: productionStrictMode,
+                realtimeRetentionDays: realtimeRetentionDays,
+                realtimeMaximumCount: realtimeMaximumCount,
                 updatedAt: updatedAt,
                 rowid: rowid,
               ),

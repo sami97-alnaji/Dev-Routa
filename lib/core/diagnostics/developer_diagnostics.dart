@@ -29,6 +29,30 @@ abstract final class DeveloperDiagnostics {
         ),
       );
     }
+    if (Uri.tryParse(request.url)?.hasScheme != true) {
+      diagnostics.add(
+        const DeveloperDiagnostic(
+          kind: DiagnosticKind.observed,
+          title: 'Invalid URL',
+          detail: 'The request URL does not contain a complete scheme.',
+        ),
+      );
+    }
+    if (request.headers.any(
+      (header) =>
+          _sensitiveName(header.key) &&
+          !header.isSecret &&
+          header.value.isNotEmpty,
+    )) {
+      diagnostics.add(
+        const DeveloperDiagnostic(
+          kind: DiagnosticKind.suggestion,
+          title: 'Secret exposure risk',
+          detail:
+              'A sensitive header uses a plain value instead of secure storage.',
+        ),
+      );
+    }
     if (request.auth.type != AuthType.none &&
         request.headers.any(
           (header) => header.key.toLowerCase() == 'authorization',
@@ -60,6 +84,31 @@ abstract final class DeveloperDiagnostics {
         ),
       );
     }
+    if (response != null) {
+      final contentType = response.headers.entries
+          .where((item) => item.key.toLowerCase() == 'content-type')
+          .map((item) => item.value.toLowerCase())
+          .firstOrNull;
+      if (contentType?.contains('json') == true &&
+          !_looksLikeJson(response.body)) {
+        diagnostics.add(
+          const DeveloperDiagnostic(
+            kind: DiagnosticKind.observed,
+            title: 'Content-Type mismatch',
+            detail: 'The response claims JSON but the body is not valid JSON.',
+          ),
+        );
+      }
+      if (response.errorCategory != null) {
+        diagnostics.add(
+          DeveloperDiagnostic(
+            kind: DiagnosticKind.observed,
+            title: 'Transport category',
+            detail: response.errorCategory!,
+          ),
+        );
+      }
+    }
     if (response != null &&
         response.statusCode != null &&
         response.statusCode! >= 400) {
@@ -76,6 +125,33 @@ abstract final class DeveloperDiagnostics {
 
   static List<DeveloperDiagnostic> forRealtime(RealtimeSessionState state) {
     final diagnostics = <DeveloperDiagnostic>[];
+    final config = state.config;
+    if (config != null &&
+        (config.url.contains('{{') ||
+            config.headers.any((item) => item.value.contains('{{')))) {
+      diagnostics.add(
+        const DeveloperDiagnostic(
+          kind: DiagnosticKind.observed,
+          title: 'Unresolved realtime variable',
+          detail: 'The URL or a header still contains a variable expression.',
+        ),
+      );
+    }
+    if (config != null &&
+        config.headers.any(
+          (item) =>
+              _sensitiveName(item.key) &&
+              !item.isSecret &&
+              item.value.isNotEmpty,
+        )) {
+      diagnostics.add(
+        const DeveloperDiagnostic(
+          kind: DiagnosticKind.suggestion,
+          title: 'Secret exposure risk',
+          detail: 'Store sensitive realtime headers by secure reference.',
+        ),
+      );
+    }
     if (state.failure != null) {
       diagnostics.add(
         DeveloperDiagnostic(
@@ -111,6 +187,33 @@ abstract final class DeveloperDiagnostics {
         ),
       );
     }
+    if (state.config?.protocol == RealtimeProtocolType.sse &&
+        state.status == RealtimeConnectionStatus.connected &&
+        state.metrics.duration != null &&
+        state.metrics.duration! > const Duration(seconds: 30) &&
+        state.messages.isEmpty) {
+      diagnostics.add(
+        const DeveloperDiagnostic(
+          kind: DiagnosticKind.suggestion,
+          title: 'SSE stream may be stalled',
+          detail: 'No events or heartbeat comments arrived for 30 seconds.',
+        ),
+      );
+    }
+    final malformed = state.messages.where(
+      (message) =>
+          message.payloadType == RealtimePayloadType.diagnostic &&
+          message.content.toLowerCase().contains('not-json'),
+    );
+    if (malformed.isNotEmpty) {
+      diagnostics.add(
+        DeveloperDiagnostic(
+          kind: DiagnosticKind.observed,
+          title: 'Malformed NDJSON',
+          detail: '${malformed.length} malformed line(s) were observed.',
+        ),
+      );
+    }
     return diagnostics;
   }
 
@@ -121,4 +224,16 @@ abstract final class DeveloperDiagnostics {
     >= 500 => 'The server reported an internal failure.',
     _ => 'Inspect the response details and request configuration.',
   };
+
+  static bool _looksLikeJson(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return false;
+    return (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+        (trimmed.startsWith('[') && trimmed.endsWith(']'));
+  }
+
+  static bool _sensitiveName(String value) => RegExp(
+    r'authorization|api[-_ ]?key|token|cookie|password',
+    caseSensitive: false,
+  ).hasMatch(value);
 }

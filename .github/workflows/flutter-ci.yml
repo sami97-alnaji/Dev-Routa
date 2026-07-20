@@ -1,0 +1,65 @@
+name: Flutter CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, 'feat/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Format, generation, analysis, and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.8
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed .
+      - run: flutter pub run build_runner build --delete-conflicting-outputs
+      - run: git diff --exit-code
+      - run: flutter analyze
+      - run: flutter test
+
+  android-debug:
+    name: Android debug build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.8
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build apk --debug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: devroute-android-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+
+  windows-debug:
+    name: Windows debug build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.8
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build windows --debug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: devroute-windows-debug-runner
+          path: build/windows/x64/runner/Debug
+          if-no-files-found: error

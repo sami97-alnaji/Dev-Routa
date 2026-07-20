@@ -2,6 +2,11 @@
 
 ## Next implementation increment
 
+Phase 4 GraphQL Studio is the current increment. The foundation is merged, but
+the completion branch must close the AST, HTTP, subscription, schema,
+persistence, UX, security, testing, CI, and repository-closure gates before it
+is marked complete.
+
 1. [x] Implement Drift database and initial schema from the schema draft.
 2. [x] Implement secure storage adapter and masking helpers.
 3. [x] Implement REST execution through Dio with redacted diagnostics.
@@ -11,4 +16,4 @@
 
 ## Not in the backlog until later
 
-Cloud synchronization, accounts, collaboration, billing, full GraphQL/gRPC, plugin marketplace, mock server, and advanced monitoring.
+Cloud synchronization, accounts, collaboration, billing, gRPC, plugin marketplace, mock server, and advanced monitoring.

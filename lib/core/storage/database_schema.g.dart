@@ -9754,6 +9754,1021 @@ class GraphqlHistoryCompanion extends UpdateCompanion<GraphqlHistoryData> {
   }
 }
 
+class $GraphqlSavedRequestsTable extends GraphqlSavedRequests
+    with TableInfo<$GraphqlSavedRequestsTable, GraphqlSavedRequest> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $GraphqlSavedRequestsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _workspaceIdMeta = const VerificationMeta(
+    'workspaceId',
+  );
+  @override
+  late final GeneratedColumn<String> workspaceId = GeneratedColumn<String>(
+    'workspace_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _collectionIdMeta = const VerificationMeta(
+    'collectionId',
+  );
+  @override
+  late final GeneratedColumn<String> collectionId = GeneratedColumn<String>(
+    'collection_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _folderIdMeta = const VerificationMeta(
+    'folderId',
+  );
+  @override
+  late final GeneratedColumn<String> folderId = GeneratedColumn<String>(
+    'folder_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _payloadJsonMeta = const VerificationMeta(
+    'payloadJson',
+  );
+  @override
+  late final GeneratedColumn<String> payloadJson = GeneratedColumn<String>(
+    'payload_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    workspaceId,
+    collectionId,
+    folderId,
+    name,
+    payloadJson,
+    sortOrder,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'graphql_saved_requests';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<GraphqlSavedRequest> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('workspace_id')) {
+      context.handle(
+        _workspaceIdMeta,
+        workspaceId.isAcceptableOrUnknown(
+          data['workspace_id']!,
+          _workspaceIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_workspaceIdMeta);
+    }
+    if (data.containsKey('collection_id')) {
+      context.handle(
+        _collectionIdMeta,
+        collectionId.isAcceptableOrUnknown(
+          data['collection_id']!,
+          _collectionIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('folder_id')) {
+      context.handle(
+        _folderIdMeta,
+        folderId.isAcceptableOrUnknown(data['folder_id']!, _folderIdMeta),
+      );
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('payload_json')) {
+      context.handle(
+        _payloadJsonMeta,
+        payloadJson.isAcceptableOrUnknown(
+          data['payload_json']!,
+          _payloadJsonMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_payloadJsonMeta);
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  GraphqlSavedRequest map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return GraphqlSavedRequest(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      workspaceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}workspace_id'],
+      )!,
+      collectionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}collection_id'],
+      ),
+      folderId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}folder_id'],
+      ),
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      payloadJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payload_json'],
+      )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $GraphqlSavedRequestsTable createAlias(String alias) {
+    return $GraphqlSavedRequestsTable(attachedDatabase, alias);
+  }
+}
+
+class GraphqlSavedRequest extends DataClass
+    implements Insertable<GraphqlSavedRequest> {
+  final String id;
+  final String workspaceId;
+  final String? collectionId;
+  final String? folderId;
+  final String name;
+  final String payloadJson;
+  final int sortOrder;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  const GraphqlSavedRequest({
+    required this.id,
+    required this.workspaceId,
+    this.collectionId,
+    this.folderId,
+    required this.name,
+    required this.payloadJson,
+    required this.sortOrder,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['workspace_id'] = Variable<String>(workspaceId);
+    if (!nullToAbsent || collectionId != null) {
+      map['collection_id'] = Variable<String>(collectionId);
+    }
+    if (!nullToAbsent || folderId != null) {
+      map['folder_id'] = Variable<String>(folderId);
+    }
+    map['name'] = Variable<String>(name);
+    map['payload_json'] = Variable<String>(payloadJson);
+    map['sort_order'] = Variable<int>(sortOrder);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  GraphqlSavedRequestsCompanion toCompanion(bool nullToAbsent) {
+    return GraphqlSavedRequestsCompanion(
+      id: Value(id),
+      workspaceId: Value(workspaceId),
+      collectionId: collectionId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(collectionId),
+      folderId: folderId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(folderId),
+      name: Value(name),
+      payloadJson: Value(payloadJson),
+      sortOrder: Value(sortOrder),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory GraphqlSavedRequest.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return GraphqlSavedRequest(
+      id: serializer.fromJson<String>(json['id']),
+      workspaceId: serializer.fromJson<String>(json['workspaceId']),
+      collectionId: serializer.fromJson<String?>(json['collectionId']),
+      folderId: serializer.fromJson<String?>(json['folderId']),
+      name: serializer.fromJson<String>(json['name']),
+      payloadJson: serializer.fromJson<String>(json['payloadJson']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'workspaceId': serializer.toJson<String>(workspaceId),
+      'collectionId': serializer.toJson<String?>(collectionId),
+      'folderId': serializer.toJson<String?>(folderId),
+      'name': serializer.toJson<String>(name),
+      'payloadJson': serializer.toJson<String>(payloadJson),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  GraphqlSavedRequest copyWith({
+    String? id,
+    String? workspaceId,
+    Value<String?> collectionId = const Value.absent(),
+    Value<String?> folderId = const Value.absent(),
+    String? name,
+    String? payloadJson,
+    int? sortOrder,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => GraphqlSavedRequest(
+    id: id ?? this.id,
+    workspaceId: workspaceId ?? this.workspaceId,
+    collectionId: collectionId.present ? collectionId.value : this.collectionId,
+    folderId: folderId.present ? folderId.value : this.folderId,
+    name: name ?? this.name,
+    payloadJson: payloadJson ?? this.payloadJson,
+    sortOrder: sortOrder ?? this.sortOrder,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  GraphqlSavedRequest copyWithCompanion(GraphqlSavedRequestsCompanion data) {
+    return GraphqlSavedRequest(
+      id: data.id.present ? data.id.value : this.id,
+      workspaceId: data.workspaceId.present
+          ? data.workspaceId.value
+          : this.workspaceId,
+      collectionId: data.collectionId.present
+          ? data.collectionId.value
+          : this.collectionId,
+      folderId: data.folderId.present ? data.folderId.value : this.folderId,
+      name: data.name.present ? data.name.value : this.name,
+      payloadJson: data.payloadJson.present
+          ? data.payloadJson.value
+          : this.payloadJson,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GraphqlSavedRequest(')
+          ..write('id: $id, ')
+          ..write('workspaceId: $workspaceId, ')
+          ..write('collectionId: $collectionId, ')
+          ..write('folderId: $folderId, ')
+          ..write('name: $name, ')
+          ..write('payloadJson: $payloadJson, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    workspaceId,
+    collectionId,
+    folderId,
+    name,
+    payloadJson,
+    sortOrder,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is GraphqlSavedRequest &&
+          other.id == this.id &&
+          other.workspaceId == this.workspaceId &&
+          other.collectionId == this.collectionId &&
+          other.folderId == this.folderId &&
+          other.name == this.name &&
+          other.payloadJson == this.payloadJson &&
+          other.sortOrder == this.sortOrder &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class GraphqlSavedRequestsCompanion
+    extends UpdateCompanion<GraphqlSavedRequest> {
+  final Value<String> id;
+  final Value<String> workspaceId;
+  final Value<String?> collectionId;
+  final Value<String?> folderId;
+  final Value<String> name;
+  final Value<String> payloadJson;
+  final Value<int> sortOrder;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const GraphqlSavedRequestsCompanion({
+    this.id = const Value.absent(),
+    this.workspaceId = const Value.absent(),
+    this.collectionId = const Value.absent(),
+    this.folderId = const Value.absent(),
+    this.name = const Value.absent(),
+    this.payloadJson = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  GraphqlSavedRequestsCompanion.insert({
+    required String id,
+    required String workspaceId,
+    this.collectionId = const Value.absent(),
+    this.folderId = const Value.absent(),
+    required String name,
+    required String payloadJson,
+    this.sortOrder = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       workspaceId = Value(workspaceId),
+       name = Value(name),
+       payloadJson = Value(payloadJson),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<GraphqlSavedRequest> custom({
+    Expression<String>? id,
+    Expression<String>? workspaceId,
+    Expression<String>? collectionId,
+    Expression<String>? folderId,
+    Expression<String>? name,
+    Expression<String>? payloadJson,
+    Expression<int>? sortOrder,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (workspaceId != null) 'workspace_id': workspaceId,
+      if (collectionId != null) 'collection_id': collectionId,
+      if (folderId != null) 'folder_id': folderId,
+      if (name != null) 'name': name,
+      if (payloadJson != null) 'payload_json': payloadJson,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  GraphqlSavedRequestsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? workspaceId,
+    Value<String?>? collectionId,
+    Value<String?>? folderId,
+    Value<String>? name,
+    Value<String>? payloadJson,
+    Value<int>? sortOrder,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return GraphqlSavedRequestsCompanion(
+      id: id ?? this.id,
+      workspaceId: workspaceId ?? this.workspaceId,
+      collectionId: collectionId ?? this.collectionId,
+      folderId: folderId ?? this.folderId,
+      name: name ?? this.name,
+      payloadJson: payloadJson ?? this.payloadJson,
+      sortOrder: sortOrder ?? this.sortOrder,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (workspaceId.present) {
+      map['workspace_id'] = Variable<String>(workspaceId.value);
+    }
+    if (collectionId.present) {
+      map['collection_id'] = Variable<String>(collectionId.value);
+    }
+    if (folderId.present) {
+      map['folder_id'] = Variable<String>(folderId.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (payloadJson.present) {
+      map['payload_json'] = Variable<String>(payloadJson.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GraphqlSavedRequestsCompanion(')
+          ..write('id: $id, ')
+          ..write('workspaceId: $workspaceId, ')
+          ..write('collectionId: $collectionId, ')
+          ..write('folderId: $folderId, ')
+          ..write('name: $name, ')
+          ..write('payloadJson: $payloadJson, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $GraphqlSchemaSnapshotsTable extends GraphqlSchemaSnapshots
+    with TableInfo<$GraphqlSchemaSnapshotsTable, GraphqlSchemaSnapshot> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $GraphqlSchemaSnapshotsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _workspaceIdMeta = const VerificationMeta(
+    'workspaceId',
+  );
+  @override
+  late final GeneratedColumn<String> workspaceId = GeneratedColumn<String>(
+    'workspace_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _endpointFingerprintMeta =
+      const VerificationMeta('endpointFingerprint');
+  @override
+  late final GeneratedColumn<String> endpointFingerprint =
+      GeneratedColumn<String>(
+        'endpoint_fingerprint',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _schemaHashMeta = const VerificationMeta(
+    'schemaHash',
+  );
+  @override
+  late final GeneratedColumn<String> schemaHash = GeneratedColumn<String>(
+    'schema_hash',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _snapshotJsonMeta = const VerificationMeta(
+    'snapshotJson',
+  );
+  @override
+  late final GeneratedColumn<String> snapshotJson = GeneratedColumn<String>(
+    'snapshot_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fetchedAtMeta = const VerificationMeta(
+    'fetchedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> fetchedAt = GeneratedColumn<DateTime>(
+    'fetched_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    workspaceId,
+    endpointFingerprint,
+    schemaHash,
+    snapshotJson,
+    fetchedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'graphql_schema_snapshots';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<GraphqlSchemaSnapshot> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('workspace_id')) {
+      context.handle(
+        _workspaceIdMeta,
+        workspaceId.isAcceptableOrUnknown(
+          data['workspace_id']!,
+          _workspaceIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_workspaceIdMeta);
+    }
+    if (data.containsKey('endpoint_fingerprint')) {
+      context.handle(
+        _endpointFingerprintMeta,
+        endpointFingerprint.isAcceptableOrUnknown(
+          data['endpoint_fingerprint']!,
+          _endpointFingerprintMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_endpointFingerprintMeta);
+    }
+    if (data.containsKey('schema_hash')) {
+      context.handle(
+        _schemaHashMeta,
+        schemaHash.isAcceptableOrUnknown(data['schema_hash']!, _schemaHashMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_schemaHashMeta);
+    }
+    if (data.containsKey('snapshot_json')) {
+      context.handle(
+        _snapshotJsonMeta,
+        snapshotJson.isAcceptableOrUnknown(
+          data['snapshot_json']!,
+          _snapshotJsonMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_snapshotJsonMeta);
+    }
+    if (data.containsKey('fetched_at')) {
+      context.handle(
+        _fetchedAtMeta,
+        fetchedAt.isAcceptableOrUnknown(data['fetched_at']!, _fetchedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fetchedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  GraphqlSchemaSnapshot map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return GraphqlSchemaSnapshot(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      workspaceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}workspace_id'],
+      )!,
+      endpointFingerprint: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}endpoint_fingerprint'],
+      )!,
+      schemaHash: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}schema_hash'],
+      )!,
+      snapshotJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}snapshot_json'],
+      )!,
+      fetchedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}fetched_at'],
+      )!,
+    );
+  }
+
+  @override
+  $GraphqlSchemaSnapshotsTable createAlias(String alias) {
+    return $GraphqlSchemaSnapshotsTable(attachedDatabase, alias);
+  }
+}
+
+class GraphqlSchemaSnapshot extends DataClass
+    implements Insertable<GraphqlSchemaSnapshot> {
+  final String id;
+  final String workspaceId;
+  final String endpointFingerprint;
+  final String schemaHash;
+  final String snapshotJson;
+  final DateTime fetchedAt;
+  const GraphqlSchemaSnapshot({
+    required this.id,
+    required this.workspaceId,
+    required this.endpointFingerprint,
+    required this.schemaHash,
+    required this.snapshotJson,
+    required this.fetchedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['workspace_id'] = Variable<String>(workspaceId);
+    map['endpoint_fingerprint'] = Variable<String>(endpointFingerprint);
+    map['schema_hash'] = Variable<String>(schemaHash);
+    map['snapshot_json'] = Variable<String>(snapshotJson);
+    map['fetched_at'] = Variable<DateTime>(fetchedAt);
+    return map;
+  }
+
+  GraphqlSchemaSnapshotsCompanion toCompanion(bool nullToAbsent) {
+    return GraphqlSchemaSnapshotsCompanion(
+      id: Value(id),
+      workspaceId: Value(workspaceId),
+      endpointFingerprint: Value(endpointFingerprint),
+      schemaHash: Value(schemaHash),
+      snapshotJson: Value(snapshotJson),
+      fetchedAt: Value(fetchedAt),
+    );
+  }
+
+  factory GraphqlSchemaSnapshot.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return GraphqlSchemaSnapshot(
+      id: serializer.fromJson<String>(json['id']),
+      workspaceId: serializer.fromJson<String>(json['workspaceId']),
+      endpointFingerprint: serializer.fromJson<String>(
+        json['endpointFingerprint'],
+      ),
+      schemaHash: serializer.fromJson<String>(json['schemaHash']),
+      snapshotJson: serializer.fromJson<String>(json['snapshotJson']),
+      fetchedAt: serializer.fromJson<DateTime>(json['fetchedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'workspaceId': serializer.toJson<String>(workspaceId),
+      'endpointFingerprint': serializer.toJson<String>(endpointFingerprint),
+      'schemaHash': serializer.toJson<String>(schemaHash),
+      'snapshotJson': serializer.toJson<String>(snapshotJson),
+      'fetchedAt': serializer.toJson<DateTime>(fetchedAt),
+    };
+  }
+
+  GraphqlSchemaSnapshot copyWith({
+    String? id,
+    String? workspaceId,
+    String? endpointFingerprint,
+    String? schemaHash,
+    String? snapshotJson,
+    DateTime? fetchedAt,
+  }) => GraphqlSchemaSnapshot(
+    id: id ?? this.id,
+    workspaceId: workspaceId ?? this.workspaceId,
+    endpointFingerprint: endpointFingerprint ?? this.endpointFingerprint,
+    schemaHash: schemaHash ?? this.schemaHash,
+    snapshotJson: snapshotJson ?? this.snapshotJson,
+    fetchedAt: fetchedAt ?? this.fetchedAt,
+  );
+  GraphqlSchemaSnapshot copyWithCompanion(
+    GraphqlSchemaSnapshotsCompanion data,
+  ) {
+    return GraphqlSchemaSnapshot(
+      id: data.id.present ? data.id.value : this.id,
+      workspaceId: data.workspaceId.present
+          ? data.workspaceId.value
+          : this.workspaceId,
+      endpointFingerprint: data.endpointFingerprint.present
+          ? data.endpointFingerprint.value
+          : this.endpointFingerprint,
+      schemaHash: data.schemaHash.present
+          ? data.schemaHash.value
+          : this.schemaHash,
+      snapshotJson: data.snapshotJson.present
+          ? data.snapshotJson.value
+          : this.snapshotJson,
+      fetchedAt: data.fetchedAt.present ? data.fetchedAt.value : this.fetchedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GraphqlSchemaSnapshot(')
+          ..write('id: $id, ')
+          ..write('workspaceId: $workspaceId, ')
+          ..write('endpointFingerprint: $endpointFingerprint, ')
+          ..write('schemaHash: $schemaHash, ')
+          ..write('snapshotJson: $snapshotJson, ')
+          ..write('fetchedAt: $fetchedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    workspaceId,
+    endpointFingerprint,
+    schemaHash,
+    snapshotJson,
+    fetchedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is GraphqlSchemaSnapshot &&
+          other.id == this.id &&
+          other.workspaceId == this.workspaceId &&
+          other.endpointFingerprint == this.endpointFingerprint &&
+          other.schemaHash == this.schemaHash &&
+          other.snapshotJson == this.snapshotJson &&
+          other.fetchedAt == this.fetchedAt);
+}
+
+class GraphqlSchemaSnapshotsCompanion
+    extends UpdateCompanion<GraphqlSchemaSnapshot> {
+  final Value<String> id;
+  final Value<String> workspaceId;
+  final Value<String> endpointFingerprint;
+  final Value<String> schemaHash;
+  final Value<String> snapshotJson;
+  final Value<DateTime> fetchedAt;
+  final Value<int> rowid;
+  const GraphqlSchemaSnapshotsCompanion({
+    this.id = const Value.absent(),
+    this.workspaceId = const Value.absent(),
+    this.endpointFingerprint = const Value.absent(),
+    this.schemaHash = const Value.absent(),
+    this.snapshotJson = const Value.absent(),
+    this.fetchedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  GraphqlSchemaSnapshotsCompanion.insert({
+    required String id,
+    required String workspaceId,
+    required String endpointFingerprint,
+    required String schemaHash,
+    required String snapshotJson,
+    required DateTime fetchedAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       workspaceId = Value(workspaceId),
+       endpointFingerprint = Value(endpointFingerprint),
+       schemaHash = Value(schemaHash),
+       snapshotJson = Value(snapshotJson),
+       fetchedAt = Value(fetchedAt);
+  static Insertable<GraphqlSchemaSnapshot> custom({
+    Expression<String>? id,
+    Expression<String>? workspaceId,
+    Expression<String>? endpointFingerprint,
+    Expression<String>? schemaHash,
+    Expression<String>? snapshotJson,
+    Expression<DateTime>? fetchedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (workspaceId != null) 'workspace_id': workspaceId,
+      if (endpointFingerprint != null)
+        'endpoint_fingerprint': endpointFingerprint,
+      if (schemaHash != null) 'schema_hash': schemaHash,
+      if (snapshotJson != null) 'snapshot_json': snapshotJson,
+      if (fetchedAt != null) 'fetched_at': fetchedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  GraphqlSchemaSnapshotsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? workspaceId,
+    Value<String>? endpointFingerprint,
+    Value<String>? schemaHash,
+    Value<String>? snapshotJson,
+    Value<DateTime>? fetchedAt,
+    Value<int>? rowid,
+  }) {
+    return GraphqlSchemaSnapshotsCompanion(
+      id: id ?? this.id,
+      workspaceId: workspaceId ?? this.workspaceId,
+      endpointFingerprint: endpointFingerprint ?? this.endpointFingerprint,
+      schemaHash: schemaHash ?? this.schemaHash,
+      snapshotJson: snapshotJson ?? this.snapshotJson,
+      fetchedAt: fetchedAt ?? this.fetchedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (workspaceId.present) {
+      map['workspace_id'] = Variable<String>(workspaceId.value);
+    }
+    if (endpointFingerprint.present) {
+      map['endpoint_fingerprint'] = Variable<String>(endpointFingerprint.value);
+    }
+    if (schemaHash.present) {
+      map['schema_hash'] = Variable<String>(schemaHash.value);
+    }
+    if (snapshotJson.present) {
+      map['snapshot_json'] = Variable<String>(snapshotJson.value);
+    }
+    if (fetchedAt.present) {
+      map['fetched_at'] = Variable<DateTime>(fetchedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GraphqlSchemaSnapshotsCompanion(')
+          ..write('id: $id, ')
+          ..write('workspaceId: $workspaceId, ')
+          ..write('endpointFingerprint: $endpointFingerprint, ')
+          ..write('schemaHash: $schemaHash, ')
+          ..write('snapshotJson: $snapshotJson, ')
+          ..write('fetchedAt: $fetchedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -9786,6 +10801,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       $WorkspaceSettingsTable(this);
   late final $GraphqlDraftsTable graphqlDrafts = $GraphqlDraftsTable(this);
   late final $GraphqlHistoryTable graphqlHistory = $GraphqlHistoryTable(this);
+  late final $GraphqlSavedRequestsTable graphqlSavedRequests =
+      $GraphqlSavedRequestsTable(this);
+  late final $GraphqlSchemaSnapshotsTable graphqlSchemaSnapshots =
+      $GraphqlSchemaSnapshotsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -9812,6 +10831,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     workspaceSettings,
     graphqlDrafts,
     graphqlHistory,
+    graphqlSavedRequests,
+    graphqlSchemaSnapshots,
   ];
 }
 
@@ -14934,6 +15955,550 @@ typedef $$GraphqlHistoryTableProcessedTableManager =
       GraphqlHistoryData,
       PrefetchHooks Function()
     >;
+typedef $$GraphqlSavedRequestsTableCreateCompanionBuilder =
+    GraphqlSavedRequestsCompanion Function({
+      required String id,
+      required String workspaceId,
+      Value<String?> collectionId,
+      Value<String?> folderId,
+      required String name,
+      required String payloadJson,
+      Value<int> sortOrder,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<int> rowid,
+    });
+typedef $$GraphqlSavedRequestsTableUpdateCompanionBuilder =
+    GraphqlSavedRequestsCompanion Function({
+      Value<String> id,
+      Value<String> workspaceId,
+      Value<String?> collectionId,
+      Value<String?> folderId,
+      Value<String> name,
+      Value<String> payloadJson,
+      Value<int> sortOrder,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$GraphqlSavedRequestsTableFilterComposer
+    extends Composer<_$AppDatabase, $GraphqlSavedRequestsTable> {
+  $$GraphqlSavedRequestsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get workspaceId => $composableBuilder(
+    column: $table.workspaceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get collectionId => $composableBuilder(
+    column: $table.collectionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get folderId => $composableBuilder(
+    column: $table.folderId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$GraphqlSavedRequestsTableOrderingComposer
+    extends Composer<_$AppDatabase, $GraphqlSavedRequestsTable> {
+  $$GraphqlSavedRequestsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get workspaceId => $composableBuilder(
+    column: $table.workspaceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get collectionId => $composableBuilder(
+    column: $table.collectionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get folderId => $composableBuilder(
+    column: $table.folderId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$GraphqlSavedRequestsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $GraphqlSavedRequestsTable> {
+  $$GraphqlSavedRequestsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get workspaceId => $composableBuilder(
+    column: $table.workspaceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get collectionId => $composableBuilder(
+    column: $table.collectionId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get folderId =>
+      $composableBuilder(column: $table.folderId, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get payloadJson => $composableBuilder(
+    column: $table.payloadJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$GraphqlSavedRequestsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $GraphqlSavedRequestsTable,
+          GraphqlSavedRequest,
+          $$GraphqlSavedRequestsTableFilterComposer,
+          $$GraphqlSavedRequestsTableOrderingComposer,
+          $$GraphqlSavedRequestsTableAnnotationComposer,
+          $$GraphqlSavedRequestsTableCreateCompanionBuilder,
+          $$GraphqlSavedRequestsTableUpdateCompanionBuilder,
+          (
+            GraphqlSavedRequest,
+            BaseReferences<
+              _$AppDatabase,
+              $GraphqlSavedRequestsTable,
+              GraphqlSavedRequest
+            >,
+          ),
+          GraphqlSavedRequest,
+          PrefetchHooks Function()
+        > {
+  $$GraphqlSavedRequestsTableTableManager(
+    _$AppDatabase db,
+    $GraphqlSavedRequestsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$GraphqlSavedRequestsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$GraphqlSavedRequestsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$GraphqlSavedRequestsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> workspaceId = const Value.absent(),
+                Value<String?> collectionId = const Value.absent(),
+                Value<String?> folderId = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String> payloadJson = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => GraphqlSavedRequestsCompanion(
+                id: id,
+                workspaceId: workspaceId,
+                collectionId: collectionId,
+                folderId: folderId,
+                name: name,
+                payloadJson: payloadJson,
+                sortOrder: sortOrder,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String workspaceId,
+                Value<String?> collectionId = const Value.absent(),
+                Value<String?> folderId = const Value.absent(),
+                required String name,
+                required String payloadJson,
+                Value<int> sortOrder = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => GraphqlSavedRequestsCompanion.insert(
+                id: id,
+                workspaceId: workspaceId,
+                collectionId: collectionId,
+                folderId: folderId,
+                name: name,
+                payloadJson: payloadJson,
+                sortOrder: sortOrder,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$GraphqlSavedRequestsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $GraphqlSavedRequestsTable,
+      GraphqlSavedRequest,
+      $$GraphqlSavedRequestsTableFilterComposer,
+      $$GraphqlSavedRequestsTableOrderingComposer,
+      $$GraphqlSavedRequestsTableAnnotationComposer,
+      $$GraphqlSavedRequestsTableCreateCompanionBuilder,
+      $$GraphqlSavedRequestsTableUpdateCompanionBuilder,
+      (
+        GraphqlSavedRequest,
+        BaseReferences<
+          _$AppDatabase,
+          $GraphqlSavedRequestsTable,
+          GraphqlSavedRequest
+        >,
+      ),
+      GraphqlSavedRequest,
+      PrefetchHooks Function()
+    >;
+typedef $$GraphqlSchemaSnapshotsTableCreateCompanionBuilder =
+    GraphqlSchemaSnapshotsCompanion Function({
+      required String id,
+      required String workspaceId,
+      required String endpointFingerprint,
+      required String schemaHash,
+      required String snapshotJson,
+      required DateTime fetchedAt,
+      Value<int> rowid,
+    });
+typedef $$GraphqlSchemaSnapshotsTableUpdateCompanionBuilder =
+    GraphqlSchemaSnapshotsCompanion Function({
+      Value<String> id,
+      Value<String> workspaceId,
+      Value<String> endpointFingerprint,
+      Value<String> schemaHash,
+      Value<String> snapshotJson,
+      Value<DateTime> fetchedAt,
+      Value<int> rowid,
+    });
+
+class $$GraphqlSchemaSnapshotsTableFilterComposer
+    extends Composer<_$AppDatabase, $GraphqlSchemaSnapshotsTable> {
+  $$GraphqlSchemaSnapshotsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get workspaceId => $composableBuilder(
+    column: $table.workspaceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get endpointFingerprint => $composableBuilder(
+    column: $table.endpointFingerprint,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get schemaHash => $composableBuilder(
+    column: $table.schemaHash,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get snapshotJson => $composableBuilder(
+    column: $table.snapshotJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$GraphqlSchemaSnapshotsTableOrderingComposer
+    extends Composer<_$AppDatabase, $GraphqlSchemaSnapshotsTable> {
+  $$GraphqlSchemaSnapshotsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get workspaceId => $composableBuilder(
+    column: $table.workspaceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get endpointFingerprint => $composableBuilder(
+    column: $table.endpointFingerprint,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get schemaHash => $composableBuilder(
+    column: $table.schemaHash,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get snapshotJson => $composableBuilder(
+    column: $table.snapshotJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$GraphqlSchemaSnapshotsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $GraphqlSchemaSnapshotsTable> {
+  $$GraphqlSchemaSnapshotsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get workspaceId => $composableBuilder(
+    column: $table.workspaceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get endpointFingerprint => $composableBuilder(
+    column: $table.endpointFingerprint,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get schemaHash => $composableBuilder(
+    column: $table.schemaHash,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get snapshotJson => $composableBuilder(
+    column: $table.snapshotJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get fetchedAt =>
+      $composableBuilder(column: $table.fetchedAt, builder: (column) => column);
+}
+
+class $$GraphqlSchemaSnapshotsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $GraphqlSchemaSnapshotsTable,
+          GraphqlSchemaSnapshot,
+          $$GraphqlSchemaSnapshotsTableFilterComposer,
+          $$GraphqlSchemaSnapshotsTableOrderingComposer,
+          $$GraphqlSchemaSnapshotsTableAnnotationComposer,
+          $$GraphqlSchemaSnapshotsTableCreateCompanionBuilder,
+          $$GraphqlSchemaSnapshotsTableUpdateCompanionBuilder,
+          (
+            GraphqlSchemaSnapshot,
+            BaseReferences<
+              _$AppDatabase,
+              $GraphqlSchemaSnapshotsTable,
+              GraphqlSchemaSnapshot
+            >,
+          ),
+          GraphqlSchemaSnapshot,
+          PrefetchHooks Function()
+        > {
+  $$GraphqlSchemaSnapshotsTableTableManager(
+    _$AppDatabase db,
+    $GraphqlSchemaSnapshotsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$GraphqlSchemaSnapshotsTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$GraphqlSchemaSnapshotsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$GraphqlSchemaSnapshotsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> workspaceId = const Value.absent(),
+                Value<String> endpointFingerprint = const Value.absent(),
+                Value<String> schemaHash = const Value.absent(),
+                Value<String> snapshotJson = const Value.absent(),
+                Value<DateTime> fetchedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => GraphqlSchemaSnapshotsCompanion(
+                id: id,
+                workspaceId: workspaceId,
+                endpointFingerprint: endpointFingerprint,
+                schemaHash: schemaHash,
+                snapshotJson: snapshotJson,
+                fetchedAt: fetchedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String workspaceId,
+                required String endpointFingerprint,
+                required String schemaHash,
+                required String snapshotJson,
+                required DateTime fetchedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => GraphqlSchemaSnapshotsCompanion.insert(
+                id: id,
+                workspaceId: workspaceId,
+                endpointFingerprint: endpointFingerprint,
+                schemaHash: schemaHash,
+                snapshotJson: snapshotJson,
+                fetchedAt: fetchedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$GraphqlSchemaSnapshotsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $GraphqlSchemaSnapshotsTable,
+      GraphqlSchemaSnapshot,
+      $$GraphqlSchemaSnapshotsTableFilterComposer,
+      $$GraphqlSchemaSnapshotsTableOrderingComposer,
+      $$GraphqlSchemaSnapshotsTableAnnotationComposer,
+      $$GraphqlSchemaSnapshotsTableCreateCompanionBuilder,
+      $$GraphqlSchemaSnapshotsTableUpdateCompanionBuilder,
+      (
+        GraphqlSchemaSnapshot,
+        BaseReferences<
+          _$AppDatabase,
+          $GraphqlSchemaSnapshotsTable,
+          GraphqlSchemaSnapshot
+        >,
+      ),
+      GraphqlSchemaSnapshot,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -14983,4 +16548,11 @@ class $AppDatabaseManager {
       $$GraphqlDraftsTableTableManager(_db, _db.graphqlDrafts);
   $$GraphqlHistoryTableTableManager get graphqlHistory =>
       $$GraphqlHistoryTableTableManager(_db, _db.graphqlHistory);
+  $$GraphqlSavedRequestsTableTableManager get graphqlSavedRequests =>
+      $$GraphqlSavedRequestsTableTableManager(_db, _db.graphqlSavedRequests);
+  $$GraphqlSchemaSnapshotsTableTableManager get graphqlSchemaSnapshots =>
+      $$GraphqlSchemaSnapshotsTableTableManager(
+        _db,
+        _db.graphqlSchemaSnapshots,
+      );
 }

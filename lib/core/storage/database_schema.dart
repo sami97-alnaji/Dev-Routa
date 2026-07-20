@@ -275,6 +275,31 @@ class GraphqlHistory extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+class GraphqlSavedRequests extends Table {
+  TextColumn get id => text()();
+  TextColumn get workspaceId => text()();
+  TextColumn get collectionId => text().nullable()();
+  TextColumn get folderId => text().nullable()();
+  TextColumn get name => text()();
+  TextColumn get payloadJson => text()();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class GraphqlSchemaSnapshots extends Table {
+  TextColumn get id => text()();
+  TextColumn get workspaceId => text()();
+  TextColumn get endpointFingerprint => text()();
+  TextColumn get schemaHash => text()();
+  TextColumn get snapshotJson => text()();
+  DateTimeColumn get fetchedAt => dateTime()();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 @DriftDatabase(
   tables: <Type>[
     Workspaces,
@@ -298,6 +323,8 @@ class GraphqlHistory extends Table {
     WorkspaceSettings,
     GraphqlDrafts,
     GraphqlHistory,
+    GraphqlSavedRequests,
+    GraphqlSchemaSnapshots,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -362,6 +389,24 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(graphqlDrafts);
         await m.createTable(graphqlHistory);
       }
+    },
+    beforeOpen: (details) async {
+      // These additive tables were introduced after schema version 6 was
+      // already published. IF NOT EXISTS upgrades existing v6 databases
+      // without resetting or rewriting their data.
+      await customStatement(
+        '''CREATE TABLE IF NOT EXISTS graphql_saved_requests (
+        id TEXT PRIMARY KEY NOT NULL, workspace_id TEXT NOT NULL,
+        collection_id TEXT, folder_id TEXT, name TEXT NOT NULL,
+        payload_json TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)''',
+      );
+      await customStatement(
+        '''CREATE TABLE IF NOT EXISTS graphql_schema_snapshots (
+        id TEXT PRIMARY KEY NOT NULL, workspace_id TEXT NOT NULL,
+        endpoint_fingerprint TEXT NOT NULL, schema_hash TEXT NOT NULL,
+        snapshot_json TEXT NOT NULL, fetched_at INTEGER NOT NULL)''',
+      );
     },
   );
 

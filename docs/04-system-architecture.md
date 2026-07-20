@@ -7,3 +7,6 @@ Features will use `data`, `domain`, and `presentation` sublayers as they are imp
 Phase 2 composes the active request flow as UI -> `RequestWorkflowCubit` -> validation and repository -> Dio execution -> masked history persistence. The presentation layer does not call Dio directly.
 
 The product is local-first. Drift/SQLite stores non-sensitive metadata; the secure-storage abstraction owns secret values.
+## Phase 4 architecture
+
+GraphQL parsing, HTTP execution, subscription transport, schema tooling, repositories, and typed failures remain service-layer concerns; widgets compose their workflows and do not own sockets or secret resolution.

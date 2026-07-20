@@ -7,7 +7,7 @@ import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 void main() {
   for (final version in <int>[1, 2, 3, 4]) {
-    test('schema version $version upgrades to version 5 without reset', () async {
+    test('schema version $version upgrades to version 6 without reset', () async {
       final directory = await Directory.systemTemp.createTemp(
         'devroute-migration-',
       );
@@ -28,6 +28,9 @@ void main() {
       final database = AppDatabase.forTesting(NativeDatabase(file));
       await database
           .customSelect('SELECT parent_folder_id FROM folders LIMIT 0')
+          .get();
+      await database
+          .customSelect('SELECT endpoint, document FROM graphql_drafts LIMIT 0')
           .get();
       await database
           .customSelect(
@@ -68,7 +71,7 @@ void main() {
       final schemaVersion = await database
           .customSelect('PRAGMA user_version')
           .getSingle();
-      expect(schemaVersion.data.values.single, 5);
+      expect(schemaVersion.data.values.single, 6);
       await database.close();
       await directory.delete(recursive: true);
     });

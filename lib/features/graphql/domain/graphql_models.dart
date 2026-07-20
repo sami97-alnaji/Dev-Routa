@@ -3,19 +3,44 @@ import 'dart:convert';
 enum GraphqlOperationType { query, mutation, subscription }
 
 class GraphqlOperation {
-  const GraphqlOperation({required this.type, this.name});
+  const GraphqlOperation({
+    required this.type,
+    this.name,
+    this.location,
+    this.variableNames = const <String>[],
+    this.hasFragments = false,
+    this.hasDirectives = false,
+  });
   final GraphqlOperationType type;
   final String? name;
+  final GraphqlSourceLocation? location;
+  final List<String> variableNames;
+  final bool hasFragments;
+  final bool hasDirectives;
   String get label => '${type.name}${name == null ? '' : ' $name'}';
+}
+
+class GraphqlSourceLocation {
+  const GraphqlSourceLocation({required this.line, required this.column});
+  final int line;
+  final int column;
+  @override
+  String toString() => '$line:$column';
 }
 
 class GraphqlDocumentAnalysis {
   const GraphqlDocumentAnalysis({
     required this.operations,
     required this.errors,
+    this.normalizedDocument,
+    this.hasFragments = false,
+    this.hasDirectives = false,
   });
   final List<GraphqlOperation> operations;
   final List<String> errors;
+  final String? normalizedDocument;
+  final bool hasFragments;
+  final bool hasDirectives;
   bool get isValid => errors.isEmpty && operations.isNotEmpty;
 }
 

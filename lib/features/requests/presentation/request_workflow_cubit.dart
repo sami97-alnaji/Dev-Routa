@@ -15,7 +15,7 @@ class RequestWorkflowState {
     this.activeIndex = 0,
     this.responses = const <String, ApiResponseModel>{},
     this.validationErrors = const <String>[],
-    this.isSending = false,
+    this.sendingIds = const <String>{},
     this.dirtyIds = const <String>{},
     this.sensitiveValues = const <String, Set<String>>{},
   });
@@ -23,20 +23,22 @@ class RequestWorkflowState {
   final int activeIndex;
   final Map<String, ApiResponseModel> responses;
   final List<String> validationErrors;
-  final bool isSending;
+  final Set<String> sendingIds;
   final Set<String> dirtyIds;
   final Map<String, Set<String>> sensitiveValues;
   ApiRequestModel get request => tabs[activeIndex];
   ApiResponseModel? get response => responses[request.id];
   bool get isDirty => dirtyIds.contains(request.id);
   bool get hasAnyDirty => dirtyIds.isNotEmpty;
+  bool get isSending => sendingIds.isNotEmpty;
+  bool isSendingRequest(String requestId) => sendingIds.contains(requestId);
 
   RequestWorkflowState copyWith({
     List<ApiRequestModel>? tabs,
     int? activeIndex,
     Map<String, ApiResponseModel>? responses,
     List<String>? validationErrors,
-    bool? isSending,
+    Set<String>? sendingIds,
     Set<String>? dirtyIds,
     Map<String, Set<String>>? sensitiveValues,
   }) => RequestWorkflowState(
@@ -44,7 +46,7 @@ class RequestWorkflowState {
     activeIndex: activeIndex ?? this.activeIndex,
     responses: responses ?? this.responses,
     validationErrors: validationErrors ?? this.validationErrors,
-    isSending: isSending ?? this.isSending,
+    sendingIds: sendingIds ?? this.sendingIds,
     dirtyIds: dirtyIds ?? this.dirtyIds,
     sensitiveValues: sensitiveValues ?? this.sensitiveValues,
   );
@@ -158,6 +160,7 @@ class RequestWorkflowCubit extends Cubit<RequestWorkflowState> {
   Future<void> closeActive({required bool discardChanges}) async {
     if (state.isDirty && !discardChanges) return;
     final request = state.request;
+    _executor.cancel(request.id);
     final tabs = List<ApiRequestModel>.of(state.tabs)
       ..removeAt(state.activeIndex);
     final dirty = Set<String>.of(state.dirtyIds)..remove(request.id);
@@ -168,7 +171,7 @@ class RequestWorkflowCubit extends Cubit<RequestWorkflowState> {
         tabs: tabs,
         activeIndex: state.activeIndex.clamp(0, tabs.length - 1),
         dirtyIds: dirty,
-        isSending: false,
+        sendingIds: Set<String>.of(state.sendingIds)..remove(request.id),
       ),
     );
   }
@@ -184,8 +187,8 @@ class RequestWorkflowCubit extends Cubit<RequestWorkflowState> {
     String? environmentId,
     int previewLimitBytes = 1024 * 1024,
   }) async {
-    if (state.isSending) return;
     final source = state.request;
+    if (state.isSendingRequest(source.id)) return;
     var environment = const <String, String>{};
     var secretKeys = const <String>{};
     if (environmentId != null) {
@@ -266,10 +269,16 @@ class RequestWorkflowCubit extends Cubit<RequestWorkflowState> {
       emit(state.copyWith(validationErrors: validation.errors));
       return;
     }
-    emit(state.copyWith(isSending: true, validationErrors: const <String>[]));
+    emit(
+      state.copyWith(
+        sendingIds: <String>{...state.sendingIds, source.id},
+        validationErrors: const <String>[],
+      ),
+    );
     final response = await _executor.execute(
       executionRequest,
       previewLimitBytes: previewLimitBytes,
+      operationId: source.id,
     );
     final runtimeSensitive = <String>{
       ...await _repository.executionRequestSecrets(source),
@@ -281,24 +290,30 @@ class RequestWorkflowCubit extends Cubit<RequestWorkflowState> {
       response,
       sensitiveValues: runtimeSensitive,
     );
-    if (!isClosed) {
+    if (!isClosed && state.tabs.any((tab) => tab.id == source.id)) {
       emit(
         state.copyWith(
           responses: <String, ApiResponseModel>{
             ...state.responses,
-            state.request.id: response,
+            source.id: response,
           },
           sensitiveValues: <String, Set<String>>{
             ...state.sensitiveValues,
-            state.request.id: runtimeSensitive,
+            source.id: runtimeSensitive,
           },
-          isSending: false,
+          sendingIds: Set<String>.of(state.sendingIds)..remove(source.id),
         ),
       );
     }
   }
 
-  void cancel() => _executor.cancel();
+  void cancel() => _executor.cancel(state.request.id);
+
+  @override
+  Future<void> close() {
+    _executor.dispose();
+    return super.close();
+  }
 
   void _replace({
     String? url,

@@ -14,22 +14,34 @@ class DioRequestExecutionService implements RequestExecutionService {
 
   final Dio _client;
   final SecureStorageService? _secureStorage;
-  CancelToken? _activeCancelToken;
+  final Map<String, CancelToken> _activeOperations = <String, CancelToken>{};
 
-  bool get isExecuting => _activeCancelToken != null;
+  bool get isExecuting => _activeOperations.isNotEmpty;
+  int get activeOperationCount => _activeOperations.length;
 
-  void cancel() {
-    _activeCancelToken?.cancel('Cancelled by the user.');
+  void cancel(String operationId) {
+    _activeOperations[operationId]?.cancel('Cancelled by the user.');
+  }
+
+  void dispose() {
+    for (final token in _activeOperations.values) {
+      token.cancel('Request service disposed.');
+    }
+    _activeOperations.clear();
   }
 
   @override
   Future<ApiResponseModel> execute(
     ApiRequestModel request, {
     int previewLimitBytes = 1024 * 1024,
+    String? operationId,
   }) async {
     final stopwatch = Stopwatch()..start();
+    final id = operationId ?? request.id;
     final cancelToken = CancelToken();
-    _activeCancelToken = cancelToken;
+    final previous = _activeOperations[id];
+    previous?.cancel('Replaced by a new execution for the same request.');
+    _activeOperations[id] = cancelToken;
     try {
       _client.options.connectTimeout = Duration(
         milliseconds: request.settings.connectTimeoutMs,
@@ -54,10 +66,10 @@ class DioRequestExecutionService implements RequestExecutionService {
         ),
       );
       stopwatch.stop();
-      final fullBody = _bodyToString(response.data);
-      final limit = previewLimitBytes.clamp(1024, 16 * 1024 * 1024);
-      final truncated = fullBody.length > limit;
-      final body = truncated ? fullBody.substring(0, limit) : fullBody;
+      final preview = _previewBody(
+        _bodyToString(response.data),
+        previewLimitBytes.clamp(0, 16 * 1024 * 1024).toInt(),
+      );
       final headers = response.headers.map.map(
         (key, values) => MapEntry(key, values.join(', ')),
       );
@@ -65,12 +77,12 @@ class DioRequestExecutionService implements RequestExecutionService {
         statusCode: response.statusCode,
         statusMessage: response.statusMessage,
         headers: SecretMasker.redactHeaders(headers),
-        body: body,
+        body: preview.body,
         durationMs: stopwatch.elapsedMilliseconds,
-        sizeBytes: utf8.encode(fullBody).length,
+        sizeBytes: preview.originalSizeBytes,
         timestamp: DateTime.now(),
         cookies: response.headers.map['set-cookie'] ?? const <String>[],
-        isTruncated: truncated,
+        isTruncated: preview.isTruncated,
       );
     } on DioException catch (error) {
       stopwatch.stop();
@@ -86,10 +98,30 @@ class DioRequestExecutionService implements RequestExecutionService {
         errorCategory: _category(error),
       );
     } finally {
-      if (identical(_activeCancelToken, cancelToken)) {
-        _activeCancelToken = null;
+      if (identical(_activeOperations[id], cancelToken)) {
+        _activeOperations.remove(id);
       }
     }
+  }
+
+  _ResponsePreview _previewBody(String fullBody, int limitBytes) {
+    final bytes = utf8.encode(fullBody);
+    if (bytes.length <= limitBytes) {
+      return _ResponsePreview(fullBody, bytes.length, false);
+    }
+    var boundary = limitBytes;
+    while (boundary > 0) {
+      try {
+        return _ResponsePreview(
+          utf8.decode(bytes.sublist(0, boundary)),
+          bytes.length,
+          true,
+        );
+      } on FormatException {
+        boundary--;
+      }
+    }
+    return _ResponsePreview('', bytes.length, true);
   }
 
   Future<Map<String, String>> _headersFor(ApiRequestModel request) async {
@@ -231,4 +263,12 @@ class DioRequestExecutionService implements RequestExecutionService {
     'http' => 'The server returned an invalid response.',
     _ => 'The request could not be completed.',
   };
+}
+
+class _ResponsePreview {
+  const _ResponsePreview(this.body, this.originalSizeBytes, this.isTruncated);
+
+  final String body;
+  final int originalSizeBytes;
+  final bool isTruncated;
 }

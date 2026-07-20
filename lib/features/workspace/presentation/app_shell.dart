@@ -458,6 +458,7 @@ class _AppShellState extends State<AppShell> {
     },
     builder: (context, state) {
       final cubit = context.read<RequestWorkflowCubit>();
+      final sendingActiveRequest = state.isSendingRequest(state.request.id);
       final workspace = context.watch<WorkspaceCubit>().state;
       if (_urlController.text != state.request.url) {
         _urlController.value = TextEditingValue(
@@ -552,7 +553,7 @@ class _AppShellState extends State<AppShell> {
                       ),
               ),
               TextButton.icon(
-                onPressed: state.isSending ? null : cubit.save,
+                onPressed: sendingActiveRequest ? null : cubit.save,
                 icon: const Icon(Icons.save_outlined),
                 label: const Text('Save'),
               ),
@@ -576,7 +577,7 @@ class _AppShellState extends State<AppShell> {
                       ),
                     )
                     .toList(),
-                onChanged: state.isSending
+                onChanged: sendingActiveRequest
                     ? null
                     : (value) => cubit.updateMethod(value!),
               ),
@@ -584,7 +585,7 @@ class _AppShellState extends State<AppShell> {
               Expanded(
                 child: TextField(
                   controller: _urlController,
-                  enabled: !state.isSending,
+                  enabled: !sendingActiveRequest,
                   onChanged: cubit.updateUrl,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
@@ -594,13 +595,15 @@ class _AppShellState extends State<AppShell> {
               ),
               const SizedBox(width: 10),
               FilledButton.icon(
-                onPressed: state.isSending
+                onPressed: sendingActiveRequest
                     ? cubit.cancel
                     : () => _sendWithSafety(cubit, state, workspace),
                 icon: Icon(
-                  state.isSending ? Icons.stop_circle_outlined : Icons.send,
+                  sendingActiveRequest
+                      ? Icons.stop_circle_outlined
+                      : Icons.send,
                 ),
-                label: Text(state.isSending ? 'Cancel' : 'Send'),
+                label: Text(sendingActiveRequest ? 'Cancel' : 'Send'),
               ),
             ],
           ),

@@ -12,6 +12,7 @@ class GraphqlWorkflowState {
   const GraphqlWorkflowState({
     required this.tabs,
     this.savedRequests = const <GraphqlSavedRequest>[],
+    this.history = const <GraphqlHistoryEntry>[],
     this.activeIndex = 0,
     this.activeOperationIds = const <String>{},
     this.activeSubscriptionIds = const <String>{},
@@ -20,6 +21,7 @@ class GraphqlWorkflowState {
 
   final List<GraphqlDraft> tabs;
   final List<GraphqlSavedRequest> savedRequests;
+  final List<GraphqlHistoryEntry> history;
   final int activeIndex;
   final Set<String> activeOperationIds;
   final Set<String> activeSubscriptionIds;
@@ -35,6 +37,7 @@ class GraphqlWorkflowState {
   GraphqlWorkflowState copyWith({
     List<GraphqlDraft>? tabs,
     List<GraphqlSavedRequest>? savedRequests,
+    List<GraphqlHistoryEntry>? history,
     int? activeIndex,
     Set<String>? activeOperationIds,
     Set<String>? activeSubscriptionIds,
@@ -42,6 +45,7 @@ class GraphqlWorkflowState {
   }) => GraphqlWorkflowState(
     tabs: tabs ?? this.tabs,
     savedRequests: savedRequests ?? this.savedRequests,
+    history: history ?? this.history,
     activeIndex: activeIndex ?? this.activeIndex,
     activeOperationIds: activeOperationIds ?? this.activeOperationIds,
     activeSubscriptionIds: activeSubscriptionIds ?? this.activeSubscriptionIds,
@@ -110,9 +114,10 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
   Future<void> restoreDrafts() async {
     final drafts = await _repository.drafts(workspaceId);
     final saved = await _repository.requests(workspaceId);
+    final history = await _repository.history(workspaceId);
     if (isClosed) return;
     if (drafts.isEmpty) {
-      emit(state.copyWith(savedRequests: saved));
+      emit(state.copyWith(savedRequests: saved, history: history));
       return;
     }
     final ordered = List<GraphqlDraft>.of(drafts)
@@ -122,6 +127,7 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
       state.copyWith(
         tabs: ordered,
         savedRequests: saved,
+        history: history,
         activeIndex: selected < 0 ? 0 : selected,
       ),
     );
@@ -254,6 +260,7 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
         request: tab.request,
         environmentId: tab.environmentId,
       );
+      await refreshHistory();
       if (isClosed || state.executionFor(tab.id).id != executionId) return;
       _setExecution(
         tab.id,
@@ -320,6 +327,42 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
         ? await _repository.requests(workspaceId)
         : await _repository.searchRequests(workspaceId, query);
     if (!isClosed) emit(state.copyWith(savedRequests: saved));
+  }
+
+  Future<void> refreshHistory([String query = '']) async {
+    final entries = await _repository.history(workspaceId, query: query);
+    if (!isClosed) emit(state.copyWith(history: entries));
+  }
+
+  Future<void> deleteHistory(String id) async {
+    await _repository.deleteHistory(id);
+    await refreshHistory();
+  }
+
+  void replayHistory(GraphqlHistoryEntry entry) {
+    final request = entry.summary['request'];
+    if (request is! Map) return;
+    final variables =
+        (request['variables'] as Map? ?? const <Object?, Object?>{}).map(
+          (key, value) => MapEntry(key.toString(), value),
+        );
+    final extensions =
+        (request['extensions'] as Map? ?? const <Object?, Object?>{}).map(
+          (key, value) => MapEntry(key.toString(), value),
+        );
+    final headers = (request['headers'] as Map? ?? const <Object?, Object?>{})
+        .map((key, value) => MapEntry(key.toString(), value.toString()));
+    newDraft(
+      request: GraphqlRequest(
+        endpoint: request['endpoint']?.toString() ?? '',
+        document: request['document']?.toString() ?? '',
+        operationName: request['operationName']?.toString(),
+        variables: variables,
+        extensions: extensions,
+        headers: headers,
+        useGet: request['useGet'] == true,
+      ),
+    );
   }
 
   Future<void> deleteSavedRequest(String id) async {

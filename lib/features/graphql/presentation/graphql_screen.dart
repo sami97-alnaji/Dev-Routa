@@ -351,6 +351,12 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
         onDuplicate: cubit.duplicateSavedRequest,
         onDelete: cubit.deleteSavedRequest,
       );
+      final history = _HistoryPanel(
+        entries: state.history,
+        onSearch: cubit.refreshHistory,
+        onReplay: cubit.replayHistory,
+        onDelete: (entry) => cubit.deleteHistory(entry.id),
+      );
       return MediaQuery.sizeOf(context).width < 900
           ? Column(
               children: [
@@ -359,11 +365,22 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
                 Expanded(child: response),
                 const Divider(),
                 SizedBox(height: 180, child: saved),
+                const Divider(),
+                SizedBox(height: 180, child: history),
               ],
             )
           : Row(
               children: [
-                SizedBox(width: 240, child: saved),
+                SizedBox(
+                  width: 280,
+                  child: Column(
+                    children: [
+                      Expanded(child: saved),
+                      const Divider(),
+                      Expanded(child: history),
+                    ],
+                  ),
+                ),
                 const VerticalDivider(),
                 Expanded(child: editor),
                 const VerticalDivider(),
@@ -469,4 +486,70 @@ class _ResponsePanel extends StatelessWidget {
       ],
     );
   }
+}
+
+class _HistoryPanel extends StatefulWidget {
+  const _HistoryPanel({
+    required this.entries,
+    required this.onSearch,
+    required this.onReplay,
+    required this.onDelete,
+  });
+  final List<GraphqlHistoryEntry> entries;
+  final ValueChanged<String> onSearch;
+  final ValueChanged<GraphqlHistoryEntry> onReplay;
+  final ValueChanged<GraphqlHistoryEntry> onDelete;
+  @override
+  State<_HistoryPanel> createState() => _HistoryPanelState();
+}
+
+class _HistoryPanelState extends State<_HistoryPanel> {
+  final _search = TextEditingController();
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text('GraphQL history', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 6),
+      TextField(
+        controller: _search,
+        onChanged: widget.onSearch,
+        decoration: const InputDecoration(
+          isDense: true,
+          prefixIcon: Icon(Icons.search),
+          hintText: 'Search history',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      const SizedBox(height: 4),
+      Expanded(
+        child: ListView(
+          children: [
+            for (final entry in widget.entries)
+              ListTile(
+                dense: true,
+                title: Text(entry.operationType.name),
+                subtitle: Text(
+                  '${entry.summary['statusCode'] ?? '-'} · ${entry.createdAt.toLocal()}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () => widget.onReplay(entry),
+                trailing: IconButton(
+                  tooltip: 'Delete history',
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () => widget.onDelete(entry),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ],
+  );
 }

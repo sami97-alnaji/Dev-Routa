@@ -10,6 +10,7 @@ import '../domain/graphql_document_parser.dart';
 import '../domain/graphql_models.dart';
 import 'graphql_history_comparison_view.dart';
 import 'graphql_response_panel.dart';
+import 'graphql_subscription_panel.dart';
 import 'graphql_workflow_cubit.dart';
 
 /// Presentation-only GraphQL editor. Execution and cancellation belong to the
@@ -304,21 +305,21 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
           const SizedBox(height: 12),
           Row(
             children: [
-              if (selectedOperation?.type == GraphqlOperationType.subscription)
-                OutlinedButton.icon(
-                  onPressed: subscription.isActive
-                      ? () => subscriptionCubit.disconnect(draft.id)
-                      : () =>
-                            subscriptionCubit.connect(draft.id, draft.request),
-                  icon: Icon(subscription.isActive ? Icons.stop : Icons.wifi),
-                  label: Text(subscription.isActive ? 'Disconnect' : 'Connect'),
-                ),
-              if (selectedOperation?.type == GraphqlOperationType.subscription)
-                const SizedBox(width: 8),
               FilledButton.icon(
-                onPressed: execution.isActive ? null : cubit.executeActive,
+                onPressed:
+                    selectedOperation?.type ==
+                            GraphqlOperationType.subscription ||
+                        execution.isActive
+                    ? null
+                    : cubit.executeActive,
                 icon: const Icon(Icons.play_arrow),
-                label: Text(execution.isActive ? 'Executing' : 'Execute'),
+                label: Text(
+                  selectedOperation?.type == GraphqlOperationType.subscription
+                      ? 'Use Connect'
+                      : execution.isActive
+                      ? 'Executing'
+                      : 'Execute',
+                ),
               ),
               const SizedBox(width: 8),
               OutlinedButton.icon(
@@ -338,13 +339,25 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
               ),
             ],
           ),
-          if (selectedOperation?.type == GraphqlOperationType.subscription)
-            Text(
-              'Subscription: ${subscription.phase.name} · events ${subscription.events.length} · dropped ${subscription.droppedEvents}',
-            ),
         ],
       );
-      final response = GraphqlResponsePanel(execution: execution);
+      final response =
+          selectedOperation?.type == GraphqlOperationType.subscription
+          ? GraphqlSubscriptionPanel(
+              key: ValueKey<String>('subscription-${draft.id}'),
+              tabId: draft.id,
+              state: subscription,
+              onConnect: (policy) => subscriptionCubit.connect(
+                draft.id,
+                draft.request,
+                reconnectPolicy: policy,
+              ),
+              onDisconnect: () => subscriptionCubit.disconnect(draft.id),
+              onReconnect: () => subscriptionCubit.reconnect(draft.id),
+              onStop: () => subscriptionCubit.stop(draft.id),
+              onClear: () => subscriptionCubit.clear(draft.id),
+            )
+          : GraphqlResponsePanel(execution: execution);
       final saved = _SavedRequestPanel(
         requests: state.savedRequests,
         search: _search,

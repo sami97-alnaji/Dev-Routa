@@ -112,6 +112,43 @@ void main() {
     );
   });
 
+  test(
+    'blocks invalid endpoints and conflicting authentication headers',
+    () async {
+      expect(
+        () => GraphqlHttpService().execute(
+          'invalid-endpoint',
+          const GraphqlRequest(
+            endpoint: 'not a url',
+            document: 'query Q { ok }',
+          ),
+        ),
+        throwsA(isA<GraphqlFailure>()),
+      );
+      expect(
+        () => GraphqlHttpService().execute(
+          'auth-conflict',
+          GraphqlRequest(
+            endpoint: endpoint,
+            document: 'query Q { ok }',
+            headers: const <String, String>{'Authorization': 'manual'},
+            auth: const RequestAuthModel(
+              type: AuthType.bearer,
+              tokenSecretRef: 'secure/token',
+            ),
+          ),
+        ),
+        throwsA(
+          isA<GraphqlFailure>().having(
+            (failure) => failure.category,
+            'category',
+            GraphqlFailureCategory.validation,
+          ),
+        ),
+      );
+    },
+  );
+
   test('refuses insecure TLS configuration before network execution', () async {
     expect(
       () => GraphqlHttpService().execute(

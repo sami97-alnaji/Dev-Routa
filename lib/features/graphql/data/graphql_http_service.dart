@@ -15,6 +15,15 @@ class GraphqlHttpService {
   final Map<String, CancelToken> _cancellations = <String, CancelToken>{};
 
   Future<GraphqlResponse> execute(String id, GraphqlRequest request) async {
+    final endpoint = Uri.tryParse(request.endpoint);
+    if (endpoint == null ||
+        (endpoint.scheme != 'http' && endpoint.scheme != 'https') ||
+        endpoint.host.isEmpty) {
+      throw const GraphqlFailure(
+        GraphqlFailureCategory.validation,
+        'The GraphQL endpoint must be a valid HTTP or HTTPS URL.',
+      );
+    }
     if (!request.settings.verifyCertificates) {
       throw const GraphqlFailure(
         GraphqlFailureCategory.validation,
@@ -42,6 +51,29 @@ class GraphqlHttpService {
       throw const GraphqlFailure(
         GraphqlFailureCategory.validation,
         'Only GraphQL queries may use GET.',
+      );
+    }
+    final hasAuthorization = request.headers.keys.any(
+      (key) => key.toLowerCase() == 'authorization',
+    );
+    final authRequiresAuthorization =
+        request.auth.type == AuthType.bearer ||
+        request.auth.type == AuthType.basic;
+    if (hasAuthorization && authRequiresAuthorization) {
+      throw const GraphqlFailure(
+        GraphqlFailureCategory.validation,
+        'Authentication conflict: remove the manual Authorization header.',
+      );
+    }
+    if ((request.auth.type == AuthType.apiKeyHeader ||
+            request.auth.type == AuthType.apiKeyQuery) &&
+        request.auth.apiKeyName.isNotEmpty &&
+        request.headers.keys.any(
+          (key) => key.toLowerCase() == request.auth.apiKeyName.toLowerCase(),
+        )) {
+      throw const GraphqlFailure(
+        GraphqlFailureCategory.validation,
+        'Authentication conflict: the API-key name is already configured as a header.',
       );
     }
     final token = CancelToken();

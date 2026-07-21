@@ -4,9 +4,9 @@ Status: IN PROGRESS
 
 ## Verified baseline
 
-`main` remains `72f877f`. The final-closure branch is synchronized at `52bbb3ed59333f1d3e0b94acc58051694e7700ba`. The preserved implementation commits are `9480968`, `5163345`, `b16b134`, `5b8535b`, `2b195c1`, `f6e7d36`, `927683b`, `503c2a8`, and `dd097d1`.
+`main` remains `72f877f`. The final-closure branch is synchronized at `16ad39b30c2c9f874ec441f36692386c9204932a`. The preserved implementation commits include `9480968`, `5163345`, `b16b134`, `5b8535b`, `2b195c1`, `f6e7d36`, `927683b`, `503c2a8`, `dd097d1`, and `16ad39b`.
 
-Verified local evidence: 73 tests passed, `flutter analyze` passed, Windows debug build passed, Android debug build passed, and Drift remains schema version 6. No final PR, merge, closure document, or milestone exists.
+Verified local evidence: 73 tests passed, `flutter analyze` passed, Windows debug build passed, Android debug build passed, and Drift remains schema version 6. JSON-aware history comparison is implemented at domain level; comparison UI/export remain pending. No final PR, merge, closure document, or milestone exists.
 
 ## Requirement audit
 

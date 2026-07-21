@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:devroute_ai_studio/features/graphql/data/graphql_http_service.dart';
 import 'package:devroute_ai_studio/features/graphql/domain/graphql_models.dart';
+import 'package:devroute_ai_studio/shared/models/api_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -80,6 +81,26 @@ void main() {
           endpoint: endpoint,
           document: 'mutation Change { ok }',
           useGet: true,
+        ),
+      ),
+      throwsA(
+        isA<GraphqlFailure>().having(
+          (failure) => failure.category,
+          'category',
+          GraphqlFailureCategory.validation,
+        ),
+      ),
+    );
+  });
+
+  test('refuses insecure TLS configuration before network execution', () async {
+    expect(
+      () => GraphqlHttpService().execute(
+        'insecure',
+        GraphqlRequest(
+          endpoint: endpoint,
+          document: 'query Secure { ok }',
+          settings: const RequestSettingsModel(verifyCertificates: false),
         ),
       ),
       throwsA(

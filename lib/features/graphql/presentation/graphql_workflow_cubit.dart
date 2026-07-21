@@ -4,45 +4,95 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../shared/models/api_models.dart';
+import '../application/graphql_execution_service.dart';
 import '../data/graphql_repository.dart';
 import '../domain/graphql_models.dart';
 
 class GraphqlWorkflowState {
   const GraphqlWorkflowState({
     required this.tabs,
+    this.savedRequests = const <GraphqlSavedRequest>[],
     this.activeIndex = 0,
     this.activeOperationIds = const <String>{},
     this.activeSubscriptionIds = const <String>{},
+    this.executions = const <String, GraphqlTabExecution>{},
   });
 
   final List<GraphqlDraft> tabs;
+  final List<GraphqlSavedRequest> savedRequests;
   final int activeIndex;
   final Set<String> activeOperationIds;
   final Set<String> activeSubscriptionIds;
+  final Map<String, GraphqlTabExecution> executions;
   GraphqlDraft get active => tabs[activeIndex];
   bool get isDirty => active.isDirty;
   bool get hasActiveWork =>
       activeOperationIds.contains(active.id) ||
       activeSubscriptionIds.contains(active.id);
+  GraphqlTabExecution executionFor(String tabId) =>
+      executions[tabId] ?? const GraphqlTabExecution();
 
   GraphqlWorkflowState copyWith({
     List<GraphqlDraft>? tabs,
+    List<GraphqlSavedRequest>? savedRequests,
     int? activeIndex,
     Set<String>? activeOperationIds,
     Set<String>? activeSubscriptionIds,
+    Map<String, GraphqlTabExecution>? executions,
   }) => GraphqlWorkflowState(
     tabs: tabs ?? this.tabs,
+    savedRequests: savedRequests ?? this.savedRequests,
     activeIndex: activeIndex ?? this.activeIndex,
     activeOperationIds: activeOperationIds ?? this.activeOperationIds,
     activeSubscriptionIds: activeSubscriptionIds ?? this.activeSubscriptionIds,
+    executions: executions ?? this.executions,
   );
 }
 
+enum GraphqlExecutionPhase {
+  idle,
+  validating,
+  resolving,
+  sending,
+  success,
+  partialSuccess,
+  graphqlFailure,
+  transportFailure,
+  cancelled,
+}
+
+class GraphqlTabExecution {
+  const GraphqlTabExecution({
+    this.phase = GraphqlExecutionPhase.idle,
+    this.id,
+    this.response,
+    this.failure,
+    this.duration,
+  });
+  final GraphqlExecutionPhase phase;
+  final String? id;
+  final GraphqlResponse? response;
+  final GraphqlFailure? failure;
+  final Duration? duration;
+  bool get isActive => switch (phase) {
+    GraphqlExecutionPhase.validating ||
+    GraphqlExecutionPhase.resolving ||
+    GraphqlExecutionPhase.sending => true,
+    _ => false,
+  };
+}
+
 class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
-  GraphqlWorkflowCubit(this._repository, {required this.workspaceId})
-    : super(GraphqlWorkflowState(tabs: <GraphqlDraft>[_newDraft(workspaceId)]));
+  GraphqlWorkflowCubit(
+    this._repository,
+    this._execution, {
+    required this.workspaceId,
+  }) : super(
+         GraphqlWorkflowState(tabs: <GraphqlDraft>[_newDraft(workspaceId)]),
+       );
 
   final GraphqlRepository _repository;
+  final GraphqlExecutionService _execution;
   final String workspaceId;
   static const _ids = Uuid();
 
@@ -59,12 +109,21 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
 
   Future<void> restoreDrafts() async {
     final drafts = await _repository.drafts(workspaceId);
-    if (drafts.isEmpty || isClosed) return;
+    final saved = await _repository.requests(workspaceId);
+    if (isClosed) return;
+    if (drafts.isEmpty) {
+      emit(state.copyWith(savedRequests: saved));
+      return;
+    }
     final ordered = List<GraphqlDraft>.of(drafts)
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
     final selected = ordered.indexWhere((item) => item.isActive);
     emit(
-      state.copyWith(tabs: ordered, activeIndex: selected < 0 ? 0 : selected),
+      state.copyWith(
+        tabs: ordered,
+        savedRequests: saved,
+        activeIndex: selected < 0 ? 0 : selected,
+      ),
     );
   }
 
@@ -167,6 +226,80 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
     subscription: true,
   );
 
+  Future<void> executeActive() async {
+    final tab = state.active;
+    final executionId = _ids.v4();
+    _setExecution(
+      tab.id,
+      GraphqlTabExecution(
+        phase: GraphqlExecutionPhase.validating,
+        id: executionId,
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    if (isClosed || state.executionFor(tab.id).id != executionId) return;
+    _setExecution(
+      tab.id,
+      GraphqlTabExecution(
+        phase: GraphqlExecutionPhase.sending,
+        id: executionId,
+      ),
+    );
+    setActiveOperationFor(tab.id, true);
+    try {
+      final result = await _execution.execute(
+        tabId: tab.id,
+        workspaceId: tab.workspaceId,
+        request: tab.request,
+      );
+      if (isClosed || state.executionFor(tab.id).id != executionId) return;
+      _setExecution(
+        tab.id,
+        GraphqlTabExecution(
+          id: executionId,
+          phase: result.response.hasPartialData
+              ? GraphqlExecutionPhase.partialSuccess
+              : result.response.errors.isNotEmpty
+              ? GraphqlExecutionPhase.graphqlFailure
+              : GraphqlExecutionPhase.success,
+          response: result.response,
+          duration: result.response.duration,
+        ),
+      );
+    } on GraphqlFailure catch (failure) {
+      if (isClosed || state.executionFor(tab.id).id != executionId) return;
+      _setExecution(
+        tab.id,
+        GraphqlTabExecution(
+          id: executionId,
+          phase: failure.category == GraphqlFailureCategory.cancelled
+              ? GraphqlExecutionPhase.cancelled
+              : failure.category == GraphqlFailureCategory.graphql
+              ? GraphqlExecutionPhase.graphqlFailure
+              : GraphqlExecutionPhase.transportFailure,
+          failure: failure,
+        ),
+      );
+    } finally {
+      if (!isClosed) setActiveOperationFor(tab.id, false);
+    }
+  }
+
+  void cancelTab(String tabId) => _execution.cancel(tabId);
+
+  void setActiveOperationFor(String tabId, bool active) => _setActivity(
+    state.activeOperationIds,
+    tabId,
+    active,
+    subscription: false,
+  );
+
+  void _setExecution(String tabId, GraphqlTabExecution execution) {
+    final executions = Map<String, GraphqlTabExecution>.of(state.executions)
+      ..[tabId] = execution;
+    emit(state.copyWith(executions: executions));
+  }
+
   Future<GraphqlSavedRequest> saveActive({bool forceNew = false}) async {
     final current = state.active;
     final saved = await _repository.saveRequest(
@@ -176,7 +309,30 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
       request: current.request,
     );
     _replace(savedRequestId: saved.id, isDirty: false);
+    await refreshSavedRequests();
     return saved;
+  }
+
+  Future<void> refreshSavedRequests([String query = '']) async {
+    final saved = query.trim().isEmpty
+        ? await _repository.requests(workspaceId)
+        : await _repository.searchRequests(workspaceId, query);
+    if (!isClosed) emit(state.copyWith(savedRequests: saved));
+  }
+
+  Future<void> deleteSavedRequest(String id) async {
+    await _repository.deleteRequest(id);
+    await refreshSavedRequests();
+  }
+
+  Future<void> duplicateSavedRequest(String id) async {
+    await _repository.duplicateRequest(id);
+    await refreshSavedRequests();
+  }
+
+  Future<void> renameSavedRequest(String id, String name) async {
+    await _repository.renameRequest(id, name);
+    await refreshSavedRequests();
   }
 
   void _replace({

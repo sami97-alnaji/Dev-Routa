@@ -1,6 +1,8 @@
 import 'package:devroute_ai_studio/core/storage/database_schema.dart'
     hide GraphqlDraft;
 import 'package:devroute_ai_studio/features/graphql/data/graphql_repository.dart';
+import 'package:devroute_ai_studio/features/graphql/data/graphql_http_service.dart';
+import 'package:devroute_ai_studio/features/graphql/application/graphql_execution_service.dart';
 import 'package:devroute_ai_studio/features/graphql/domain/graphql_models.dart';
 import 'package:devroute_ai_studio/features/graphql/presentation/graphql_workflow_cubit.dart';
 import 'package:drift/native.dart';
@@ -12,7 +14,15 @@ void main() {
     () async {
       final database = AppDatabase.forTesting(NativeDatabase.memory());
       final repository = GraphqlRepository(database);
-      final first = GraphqlWorkflowCubit(repository, workspaceId: 'workspace');
+      final execution = GraphqlExecutionService(
+        GraphqlHttpService(),
+        repository,
+      );
+      final first = GraphqlWorkflowCubit(
+        repository,
+        execution,
+        workspaceId: 'workspace',
+      );
       first.updateEndpoint('http://127.0.0.1/graphql');
       first.updateDocument('query One { one }');
       first.updateVariables(<String, Object?>{'page': 1});
@@ -28,6 +38,7 @@ void main() {
 
       final restored = GraphqlWorkflowCubit(
         repository,
+        execution,
         workspaceId: 'workspace',
       );
       await restored.restoreDrafts();

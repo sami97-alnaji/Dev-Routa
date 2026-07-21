@@ -15,6 +15,12 @@ class GraphqlHttpService {
   final Map<String, CancelToken> _cancellations = <String, CancelToken>{};
 
   Future<GraphqlResponse> execute(String id, GraphqlRequest request) async {
+    if (!request.settings.verifyCertificates) {
+      throw const GraphqlFailure(
+        GraphqlFailureCategory.validation,
+        'Disabling TLS certificate verification is not supported.',
+      );
+    }
     final analysis = GraphqlDocumentParser.analyze(request.document);
     final operation = GraphqlDocumentParser.select(
       analysis,
@@ -78,6 +84,15 @@ class GraphqlHttpService {
           },
           responseType: ResponseType.plain,
           validateStatus: (_) => true,
+          connectTimeout: Duration(
+            milliseconds: request.settings.connectTimeoutMs,
+          ),
+          sendTimeout: Duration(milliseconds: request.settings.sendTimeoutMs),
+          receiveTimeout: Duration(
+            milliseconds: request.settings.receiveTimeoutMs,
+          ),
+          followRedirects: request.settings.followRedirects,
+          maxRedirects: request.settings.maxRedirects,
         ),
         cancelToken: token,
       );

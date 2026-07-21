@@ -15,6 +15,8 @@ import '../../../core/security/secret_masker.dart';
 import '../../../core/storage/local_workspace_repository.dart';
 import '../../../features/realtime/presentation/realtime_screen.dart';
 import '../../../features/graphql/presentation/graphql_screen.dart';
+import '../../../features/graphql/data/graphql_repository.dart';
+import '../../../features/graphql/presentation/graphql_workflow_cubit.dart';
 import '../../../shared/models/api_models.dart';
 import '../../requests/presentation/request_workflow_cubit.dart';
 import 'workspace_cubit.dart';
@@ -153,7 +155,22 @@ class _AppShellState extends State<AppShell> {
     3 => _environments(),
     4 => _settings(),
     5 => const RealtimeScreen(),
-    _ => const GraphqlScreen(),
+    _ => BlocBuilder<WorkspaceCubit, WorkspaceState>(
+      builder: (context, state) {
+        final workspaceId = state.selectedWorkspaceId;
+        if (workspaceId == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        return BlocProvider(
+          key: ValueKey<String>(workspaceId),
+          create: (context) => GraphqlWorkflowCubit(
+            context.read<GraphqlRepository>(),
+            workspaceId: workspaceId,
+          )..restoreDrafts(),
+          child: const GraphqlScreen(),
+        );
+      },
+    ),
   };
 
   Widget _workspace() => BlocBuilder<WorkspaceCubit, WorkspaceState>(

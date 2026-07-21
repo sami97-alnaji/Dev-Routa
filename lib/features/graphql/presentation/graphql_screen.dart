@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../data/graphql_http_service.dart';
 import '../domain/graphql_document_parser.dart';
 import '../domain/graphql_models.dart';
+import 'graphql_workflow_cubit.dart';
 
 class GraphqlScreen extends StatefulWidget {
   const GraphqlScreen({super.key});
@@ -70,6 +72,18 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final workflow = context.watch<GraphqlWorkflowCubit>();
+    final draft = workflow.state.active;
+    if (_endpoint.text != draft.request.endpoint) {
+      _endpoint.text = draft.request.endpoint;
+    }
+    if (_document.text != draft.request.document) {
+      _document.text = draft.request.document;
+    }
+    if (_variables.text != jsonEncode(draft.request.variables)) {
+      _variables.text = jsonEncode(draft.request.variables);
+    }
+    _operation = draft.request.operationName;
     final analysis = GraphqlDocumentParser.analyze(_document.text);
     final compact = MediaQuery.sizeOf(context).width < 900;
     final editor = Column(
@@ -79,9 +93,25 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
           'GraphQL Studio',
           style: Theme.of(context).textTheme.headlineMedium,
         ),
+        Wrap(
+          spacing: 6,
+          children: [
+            for (var index = 0; index < workflow.state.tabs.length; index++)
+              InputChip(
+                label: Text(
+                  '${workflow.state.tabs[index].isDirty ? '• ' : ''}${workflow.state.tabs[index].title}',
+                ),
+                selected: index == workflow.state.activeIndex,
+                onPressed: () => workflow.selectTab(index),
+                onDeleted: () => workflow.closeActive(discardChanges: true),
+              ),
+            ActionChip(label: const Text('+'), onPressed: workflow.newDraft),
+          ],
+        ),
         const SizedBox(height: 12),
         TextField(
           controller: _endpoint,
+          onChanged: workflow.updateEndpoint,
           decoration: const InputDecoration(
             labelText: 'Endpoint',
             border: OutlineInputBorder(),
@@ -98,7 +128,10 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
             for (final op in analysis.operations)
               DropdownMenuItem(value: op.name, child: Text(op.label)),
           ],
-          onChanged: (value) => setState(() => _operation = value),
+          onChanged: (value) {
+            workflow.selectOperation(value);
+            setState(() => _operation = value);
+          },
         ),
         if (analysis.errors.isNotEmpty)
           Padding(
@@ -114,7 +147,10 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
             controller: _document,
             maxLines: null,
             expands: true,
-            onChanged: (_) => setState(() {}),
+            onChanged: (value) {
+              workflow.updateDocument(value);
+              setState(() {});
+            },
             decoration: const InputDecoration(
               labelText: 'GraphQL document',
               alignLabelWithHint: true,
@@ -125,6 +161,16 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
         const SizedBox(height: 12),
         TextField(
           controller: _variables,
+          onChanged: (value) {
+            try {
+              final decoded = jsonDecode(value);
+              if (decoded is Map) {
+                workflow.updateVariables(decoded.cast<String, Object?>());
+              }
+            } on FormatException {
+              // Retain invalid draft text so the editor can show the error.
+            }
+          },
           minLines: 3,
           maxLines: 6,
           decoration: const InputDecoration(

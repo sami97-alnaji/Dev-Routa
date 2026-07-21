@@ -10,6 +10,7 @@ import 'core/theme/app_theme.dart';
 import 'features/requests/presentation/request_workflow_cubit.dart';
 import 'features/realtime/data/realtime_repository.dart';
 import 'features/realtime/data/realtime_transport.dart';
+import 'features/graphql/data/graphql_repository.dart';
 import 'features/realtime/presentation/realtime_session_cubit.dart';
 import 'features/workspace/presentation/app_shell.dart';
 import 'features/workspace/presentation/workspace_cubit.dart';
@@ -72,12 +73,15 @@ class DevRouteApp extends StatelessWidget {
           ),
         ),
       ],
-      child: MaterialApp.router(
-        title: 'DevRoute AI Studio',
-        theme: AppTheme.light,
-        darkTheme: AppTheme.dark,
-        themeMode: ThemeMode.dark,
-        routerConfig: _router,
+      child: RepositoryProvider<GraphqlRepository>(
+        create: (_) => GraphqlRepository(_database),
+        child: MaterialApp.router(
+          title: 'DevRoute AI Studio',
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          themeMode: ThemeMode.dark,
+          routerConfig: _router,
+        ),
       ),
     );
   }

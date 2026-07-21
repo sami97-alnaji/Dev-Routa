@@ -2,37 +2,44 @@
 
 Status: IN PROGRESS
 
-Audit baseline: `main` at merge commit `72f877f2d247cf518d00845e78b94bf461ad02e2`, which merged PR #3. PR #2 and PR #3 are Phase 4 foundations, not Phase 4 closure. The final-closure branch baseline passed `flutter analyze` and 62 tests on Flutter 3.41.8 / Dart 3.11.5.
+## Verified baseline
 
-## Current final-closure branch inventory
+`main` is at `72f877f2d247cf518d00845e78b94bf461ad02e2` (PR #3 foundation merge). The current final-closure branch is `feat/graphql-phase4-final-closure`, synchronized with origin at `5b8535b1ab9a9f3a6b691cbb8ea85a0c2a0a51e5` (`5b8535b feat: centralize GraphQL tab execution`).
 
-The branch starts at the synchronized remote commit `b16b134395d455daab6fff681a0224428c73c1bb`, following saved-request CRUD (`9480968`) and the draft/tab workflow (`5163345`). It now has an application-owned HTTP execution boundary (`GraphqlExecutionService`), per-tab execution states and cancellation, a presentation-only GraphQL editor, saved-request search/open/duplicate/delete entry points, and a TLS-safe HTTP settings guard. This remains an in-progress implementation, not a closure claim.
+The branch preserves saved-request CRUD (`9480968`), draft/tab workflow (`5163345`), app-shell wiring (`b16b134`), and centralized HTTP tab execution (`5b8535b`). At this commit, local `flutter analyze`, 66 tests, Windows debug build, and Android debug build pass. This is not Phase 4 closure evidence: there is no final PR, final CI run, merge to `main`, repository-closure document, or milestone tag.
 
-## Requirement audit
+## Current requirement audit
 
-| Area | Classification | Evidence and gap |
+| Area | Classification | Verified current state and remaining gap |
 |---|---|---|
-| GraphQL parsing | Complete foundation | `graphql_document_parser.dart` uses `gql` AST parsing with source locations, fragments, directives, variable definitions, duplicate-name validation, and anonymous-operation rules. |
-| Domain models | Partial | Operation, request, and response models exist, but response errors are untyped and there are no typed failure categories, schema, subscription, snapshot, diff, metrics, or export models. |
-| HTTP execution | Partial | POST/GET query execution, GET-mutation blocking, typed envelope parsing, per-tab cancellation, configured timeouts/redirect policy, secure-reference authentication, and a TLS-safe guard exist. `GraphqlExecutionService -> GraphqlHttpService -> GraphqlRepository` now owns execution/history rather than the widget. Environment substitution, disabled headers, mutation confirmation, explicit HTTP-error classification, bounded previews, and a complete diagnostics surface remain incomplete. |
-| Response handling | Partial | Data, errors, extensions, timing, size, and masked response headers are captured. There is no typed location/path/extension model, bounded Unicode-safe preview, raw-body/error/status/timeline UI, or complete partial-success diagnostics. |
-| Subscriptions | Partial / disconnected | `graphql-transport-ws` init, ack, subscribe, next, stop, ping/pong, and ack-timeout foundations exist, but reconnect/resubscribe policy, concurrent-tab management, persistence/history, metrics, and a complete UI are absent. |
-| Introspection | Partial / disconnected | Introspection parsing, stable schema hashing, basic diff, and denial classification exist, but the explicit connected explorer, cancellation, cache retention, offline browsing, and user-facing states are absent. |
-| Schema explorer/diff | Missing | No explorer, operation skeleton generation, snapshot comparison, or conservative change classification exists. |
-| Persistence | Partial | `graphql_drafts` and `graphql_history` are minimal tables. Saved-request CRUD, settings, headers/auth semantics, subscriptions, events, schema snapshots, indexes, ownership, retention, replay, and cleanup are absent. Migration coverage currently checks only table availability and sentinel rows. |
-| CRUD/drafts | Partial | Saved requests support create/update/move/delete, rename, duplicate, search, reorder, and persistence of extensions, auth secret references, and transport settings. `GraphqlWorkflowCubit` provides stable independent draft tabs, autosave, restoration, duplicate/close flows, dirty state, saved-request relationship, isolated activity markers, and per-tab execution result/failure/timing state. The GraphQL surface now exposes save, search, open-new-tab, duplicate, and delete. Rename confirmation, move/reorder UI, collection/folder tree refresh, and full close/navigation protection remain incomplete. |
-| History | Partial | A sanitized summary can be inserted. Filtering, pin/tags/notes, retention, replay, comparison, safe JSON/JSONL export, and diagnostic bundles are absent. |
-| Desktop UX | Partial | The responsive screen contains independent tabs, editor, variables, operation selection, save/search/open/duplicate/delete saved requests, and an execution-state response panel. It no longer owns Dio, CancelToken, response parsing, history writes, or execution state. Full configuration, response tabs/search/export, tree moves, comparisons, schema/history/subscription surfaces, keyboard shortcuts, and close dialogs remain missing. |
-| Android UX | Missing | No dedicated mobile GraphQL workflow, focused screens, lifecycle handling, accessibility semantics, or GraphQL back protection tests exist. |
-| Security/diagnostics | Partial | Existing masking utilities are reused for response headers and summaries. Runtime secret resolution, auth integration, suspicious literals, typed diagnostics, cache safety, connection-parameter masking, and complete GraphQL failure taxonomy are absent. |
-| Import/export | Missing | No `.graphql`/`.gql` import, sanitized document export, GraphQL cURL workflow, response-path copy, schema export/diff, or subscription JSONL export exists. |
-| Documentation | Documentation gap | Documents 28–37 are not present. The roadmap still needs Phase 4 marked current without claiming completion. |
-| Validation/CI | Testing gap | Baseline tests/analyze pass, but Windows and Android Phase 4 builds, deterministic GraphQL HTTP/WebSocket/introspection/schema tests, CI completion, PR verification, merge verification, closure documentation, and the Phase 4 milestone are pending. |
+| GraphQL parsing | COMPLETE | `graphql_document_parser.dart` uses the `gql` AST with source locations, fragments, directives, variable definitions, duplicate-name validation, and anonymous-operation rules. |
+| Domain and typed errors | PARTIAL | Requests, operations, responses, typed `GraphqlFailure` categories, and typed GraphQL errors exist. Errors preserve message, locations, paths, and extensions. A complete result-classification, history, subscription-session, metrics, comparison, and export model set remains missing. |
+| HTTP execution | PARTIAL | `GraphqlScreen -> GraphqlWorkflowCubit -> GraphqlExecutionService -> GraphqlHttpService -> GraphqlRepository` owns execution. The UI owns neither Dio, CancelToken, response-envelope parsing, history writes, nor execution state. POST/GET queries, GET-mutation blocking, auth secure references, timeouts, redirect policy, per-tab cancellation, and TLS rejection are present. Environment substitution, disabled headers, header secret references, mutation confirmation, explicit HTTP classifications, bounded preview, and full diagnostics remain incomplete. |
+| Response handling | PARTIAL | Data, typed errors, extensions, status, timing, byte size, and masked response headers are captured. Bounded Unicode-safe preview, truncation state, response views, search, safe copy/export, and complete partial-success diagnostics are missing. |
+| Saved requests and drafts | PARTIAL | Repository CRUD persists extensions, auth secure references, settings, ordering, and location. Workflow tabs autosave, restore, duplicate, track dirty state, and isolate execution. UI includes save, search, open in a new tab, duplicate, and delete foundations. Rename/update confirmation, move/reorder UI, tree refresh, and complete close/navigation protection are incomplete. |
+| HTTP history and comparison | PARTIAL / MISSING | A sanitized minimal summary is recorded. Immutable records, filters, retention, pin/tags/notes, replay, export, comparison, and their integration/security tests are missing. |
+| Subscriptions | PARTIAL / DISCONNECTED | `graphql-transport-ws` handshake, ack, subscribe, next, stop, ping/pong, and ack-timeout foundations exist. Per-tab application state, reconnect/resubscribe, bounded timeline, persistence, comparison, and connected UI are missing. |
+| Introspection and schema | PARTIAL / DISCONNECTED | Introspection parsing, stable hashing, basic snapshots/diff, and denial classification exist. Connected explorer UI, cancellation, cache retention/offline browsing, conservative comparison, and operation skeleton generation are missing. |
+| Desktop UX | PARTIAL | The responsive editor supports independent tabs, operations, variables, saved requests, execution, cancellation, and response-state display. It lacks complete configuration, focused response/history/schema/subscription tools, shortcuts, and close dialogs. |
+| Android UX | MISSING | There is no dedicated GraphQL workflow with GraphQL-specific navigation, lifecycle, accessibility, and compact-layout coverage. |
+| Import/export | MISSING | GraphQL document/cURL import, sanitized request/response/schema/history exports, JSONL, diagnostic bundles, and round-trip/redaction tests are absent. |
+| Security and diagnostics | PARTIAL | Saved configuration persists secret references rather than resolved values; headers/history are sanitized; TLS verification cannot be disabled. Environment resolution, runtime-secret cleanup proof, reflected-secret redaction coverage, suspicious-literal diagnostics, connection-parameter masking, cache/export safety, and diagnostics UI remain incomplete. |
+| Drift schema 6 | PARTIAL | Schema version remains 6 and prior migrations are covered. GraphQL-specific cascade, indexing, history/subscription retention, and secret-reference cleanup coverage remain incomplete. |
+| Documentation | PARTIAL | Documents `28` through `36` exist. `docs/37-phase4-repository-closure.md` must not be created until implementation is complete and merged/verified on `main`. |
+| Validation and delivery | PARTIAL | Local analysis, 66 tests, Windows debug build, and Android debug build pass at `5b8535b`. Remaining GraphQL coverage, final CI, PR, merge, final-main verification, closure documentation, and tag are pending. |
 
-## Security assessment
+## Remaining implementation backlog
 
-Saved configurations preserve secret references rather than their resolved values, HTTP response headers and history summaries are sanitized, and insecure certificate verification is rejected before network execution. Environment-secret substitution, redaction coverage for all GraphQL exports/caches/timelines, and runtime-secret cleanup evidence remain release-blocking security work.
+Only the following Partial, Disconnected, and Missing work is in scope for continuation. Completed parser, saved-request foundation, draft tabs, app-shell wiring, centralized execution, and current local validation are excluded.
+
+1. HTTP configuration, environment resolution, result classification, bounded previews, diagnostics, response UI, and deterministic local-server tests.
+2. Complete saved-request UI, tab close/navigation safety, and GraphQL-specific Android lifecycle coverage.
+3. Sanitized HTTP history, retention/filtering/replay/export, and HTTP comparison.
+4. Subscription application architecture, full `graphql-transport-ws` lifecycle, timeline, session history, comparison, UI, and tests.
+5. Connected schema explorer, snapshots/retention/offline use, conservative schema comparison, and operation skeleton generation.
+6. Complete desktop and Android GraphQL surfaces, import/export, and diagnostics UI.
+7. Security/migration/cascade coverage followed by documentation, CI, PR, merge, main verification, closure document, and annotated milestone.
 
 ## Completion gate
 
-Phase 4 must remain IN PROGRESS until AST parsing, HTTP, subscriptions, introspection/schema intelligence, complete persistence/CRUD/history, desktop/mobile workflows, security diagnostics, import/export, builds, CI, merge verification, closure documentation, and the final annotated milestone are all validated.
+Phase 4 remains IN PROGRESS until every remaining workflow above is connected, persisted where applicable, secure, tested, validated on Windows and Android, accepted by CI, merged to `main`, documented by `docs/37-phase4-repository-closure.md`, and tagged as `v0.4.0-alpha.1`.

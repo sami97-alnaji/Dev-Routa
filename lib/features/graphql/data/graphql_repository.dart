@@ -13,12 +13,22 @@ class GraphqlDraft {
     required this.title,
     required this.request,
     required this.updatedAt,
+    this.savedRequestId,
+    this.environmentId,
+    this.sortOrder = 0,
+    this.isActive = false,
+    this.isDirty = true,
   });
   final String id;
   final String workspaceId;
   final String title;
   final GraphqlRequest request;
   final DateTime updatedAt;
+  final String? savedRequestId;
+  final String? environmentId;
+  final int sortOrder;
+  final bool isActive;
+  final bool isDirty;
 }
 
 class GraphqlSavedRequest {
@@ -54,6 +64,11 @@ class GraphqlRepository {
     required String workspaceId,
     required String title,
     required GraphqlRequest request,
+    String? savedRequestId,
+    String? environmentId,
+    int sortOrder = 0,
+    bool isActive = false,
+    bool isDirty = true,
   }) async {
     final draft = GraphqlDraft(
       id: id ?? _ids.v4(),
@@ -61,6 +76,11 @@ class GraphqlRepository {
       title: title,
       request: request,
       updatedAt: DateTime.now(),
+      savedRequestId: savedRequestId,
+      environmentId: environmentId,
+      sortOrder: sortOrder,
+      isActive: isActive,
+      isDirty: isDirty,
     );
     await _database.customStatement(
       'INSERT OR REPLACE INTO graphql_drafts (id, workspace_id, title, endpoint, document, operation_name, variables_json, headers_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -71,8 +91,8 @@ class GraphqlRepository {
         request.endpoint,
         request.document,
         request.operationName,
-        _safeJson(request.variables),
-        _safeJson(request.headers),
+        jsonEncode(request.variables),
+        _draftPayload(draft),
         draft.updatedAt.millisecondsSinceEpoch ~/ 1000,
       ],
     );
@@ -86,24 +106,13 @@ class GraphqlRepository {
                 variables: <Variable>[Variable.withString(workspaceId)],
               )
               .get())
-          .map(
-            (r) => GraphqlDraft(
-              id: r.read<String>('id'),
-              workspaceId: workspaceId,
-              title: r.read<String>('title'),
-              updatedAt: r.read<DateTime>('updated_at'),
-              request: GraphqlRequest(
-                endpoint: r.read<String>('endpoint'),
-                document: r.read<String>('document'),
-                operationName: r.read<String?>('operation_name'),
-                variables: (jsonDecode(r.read<String>('variables_json')) as Map)
-                    .cast<String, Object?>(),
-                headers: (jsonDecode(r.read<String>('headers_json')) as Map)
-                    .map((k, v) => MapEntry(k.toString(), v.toString())),
-              ),
-            ),
-          )
+          .map(_draftFromRow)
           .toList();
+
+  Future<void> deleteDraft(String id) => _database.customStatement(
+    'DELETE FROM graphql_drafts WHERE id = ?',
+    <Object?>[id],
+  );
 
   Future<void> record({
     String? draftId,
@@ -122,7 +131,47 @@ class GraphqlRepository {
     ],
   );
 
-  String _safeJson(Object value) => SecretMasker.redactText(jsonEncode(value));
+  String _draftPayload(GraphqlDraft draft) => jsonEncode(<String, Object?>{
+    'headers': draft.request.headers,
+    'extensions': draft.request.extensions,
+    'auth': _authJson(draft.request.auth),
+    'settings': _settingsJson(draft.request.settings),
+    'savedRequestId': draft.savedRequestId,
+    'environmentId': draft.environmentId,
+    'sortOrder': draft.sortOrder,
+    'isActive': draft.isActive,
+    'isDirty': draft.isDirty,
+  });
+
+  GraphqlDraft _draftFromRow(QueryRow row) {
+    final payload = _jsonMap(row.read<String>('headers_json'));
+    // v6 foundations stored a plain header map. Treat that shape as a safe
+    // legacy draft while the envelope carries all tab state for new saves.
+    final headers = payload['headers'] is Map
+        ? _stringMap(payload['headers'])
+        : _stringMap(payload);
+    return GraphqlDraft(
+      id: row.read<String>('id'),
+      workspaceId: row.read<String>('workspace_id'),
+      title: row.read<String>('title'),
+      updatedAt: row.read<DateTime>('updated_at'),
+      savedRequestId: payload['savedRequestId']?.toString(),
+      environmentId: payload['environmentId']?.toString(),
+      sortOrder: (payload['sortOrder'] as num?)?.toInt() ?? 0,
+      isActive: payload['isActive'] == true,
+      isDirty: payload['isDirty'] != false,
+      request: GraphqlRequest(
+        endpoint: row.read<String>('endpoint'),
+        document: row.read<String>('document'),
+        operationName: row.read<String?>('operation_name'),
+        variables: _jsonMap(row.read<String>('variables_json')),
+        headers: headers,
+        extensions: _jsonMap(payload['extensions']),
+        auth: _authFromJson(payload['auth']),
+        settings: _settingsFromJson(payload['settings']),
+      ),
+    );
+  }
 
   Future<GraphqlSavedRequest> saveRequest({
     String? id,
@@ -324,23 +373,43 @@ class GraphqlRepository {
     'headers': request.headers,
     'useGet': request.useGet,
     'extensions': request.extensions,
-    'auth': <String, Object?>{
-      'type': request.auth.type.name,
-      'username': request.auth.username,
-      'passwordSecretRef': request.auth.passwordSecretRef,
-      'tokenSecretRef': request.auth.tokenSecretRef,
-      'apiKeyName': request.auth.apiKeyName,
-      'apiKeySecretRef': request.auth.apiKeySecretRef,
-    },
-    'settings': <String, Object?>{
-      'connectTimeoutMs': request.settings.connectTimeoutMs,
-      'sendTimeoutMs': request.settings.sendTimeoutMs,
-      'receiveTimeoutMs': request.settings.receiveTimeoutMs,
-      'followRedirects': request.settings.followRedirects,
-      'maxRedirects': request.settings.maxRedirects,
-      'verifyCertificates': request.settings.verifyCertificates,
-    },
+    'auth': _authJson(request.auth),
+    'settings': _settingsJson(request.settings),
   });
+
+  Map<String, Object?> _authJson(RequestAuthModel auth) => <String, Object?>{
+    'type': auth.type.name,
+    'username': auth.username,
+    'passwordSecretRef': auth.passwordSecretRef,
+    'tokenSecretRef': auth.tokenSecretRef,
+    'apiKeyName': auth.apiKeyName,
+    'apiKeySecretRef': auth.apiKeySecretRef,
+  };
+
+  Map<String, Object?> _settingsJson(RequestSettingsModel settings) =>
+      <String, Object?>{
+        'connectTimeoutMs': settings.connectTimeoutMs,
+        'sendTimeoutMs': settings.sendTimeoutMs,
+        'receiveTimeoutMs': settings.receiveTimeoutMs,
+        'followRedirects': settings.followRedirects,
+        'maxRedirects': settings.maxRedirects,
+        'verifyCertificates': settings.verifyCertificates,
+      };
+
+  Map<String, Object?> _jsonMap(Object? value) {
+    if (value is String) {
+      try {
+        return _jsonMap(jsonDecode(value));
+      } on FormatException {
+        return const <String, Object?>{};
+      }
+    }
+    if (value is! Map) return const <String, Object?>{};
+    return value.map((key, item) => MapEntry(key.toString(), item));
+  }
+
+  Map<String, String> _stringMap(Object? value) =>
+      _jsonMap(value).map((key, item) => MapEntry(key, item.toString()));
 
   RequestAuthModel _authFromJson(Object? value) {
     final json = value is Map ? value : const <Object?, Object?>{};

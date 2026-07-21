@@ -3,8 +3,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../shared/models/api_models.dart';
 import '../data/graphql_repository.dart';
+import '../application/graphql_subscription_service.dart';
 import '../domain/graphql_document_parser.dart';
+import '../domain/graphql_models.dart';
 import 'graphql_workflow_cubit.dart';
 
 /// Presentation-only GraphQL editor. Execution and cancellation belong to the
@@ -21,6 +24,8 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
   final _variables = TextEditingController();
   final _headers = TextEditingController();
   final _extensions = TextEditingController();
+  final _secretRef = TextEditingController();
+  final _username = TextEditingController();
   final _search = TextEditingController();
 
   @override
@@ -30,6 +35,8 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
     _variables.dispose();
     _headers.dispose();
     _extensions.dispose();
+    _secretRef.dispose();
+    _username.dispose();
     _search.dispose();
     super.dispose();
   }
@@ -40,6 +47,7 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
     Map<String, Object?> variables,
     Map<String, String> headers,
     Map<String, Object?> extensions,
+    RequestAuthModel auth,
   ) {
     if (_endpoint.text != endpoint) _endpoint.text = endpoint;
     if (_document.text != document) _document.text = document;
@@ -49,6 +57,18 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
     if (_headers.text != headerText) _headers.text = headerText;
     final extensionText = const JsonEncoder().convert(extensions);
     if (_extensions.text != extensionText) _extensions.text = extensionText;
+    if (_secretRef.text !=
+        (auth.tokenSecretRef ??
+            auth.passwordSecretRef ??
+            auth.apiKeySecretRef ??
+            '')) {
+      _secretRef.text =
+          auth.tokenSecretRef ??
+          auth.passwordSecretRef ??
+          auth.apiKeySecretRef ??
+          '';
+    }
+    if (_username.text != auth.username) _username.text = auth.username;
   }
 
   @override
@@ -65,8 +85,17 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
         draft.request.variables,
         draft.request.headers,
         draft.request.extensions,
+        draft.request.auth,
       );
       final analysis = GraphqlDocumentParser.analyze(draft.request.document);
+      final selectedOperation = GraphqlDocumentParser.select(
+        analysis,
+        draft.request.operationName,
+      );
+      final subscriptionCubit = context.read<GraphqlSubscriptionCubit>();
+      final subscription =
+          subscriptionCubit.state[draft.id] ??
+          const GraphqlSubscriptionTabState();
       final editor = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -118,6 +147,73 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
             value: draft.request.useGet,
             onChanged: cubit.updateUseGet,
           ),
+          DropdownButtonFormField<AuthType>(
+            key: ValueKey<String>('auth-${draft.id}'),
+            initialValue: draft.request.auth.type,
+            decoration: const InputDecoration(
+              labelText: 'Authentication',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              for (final type in AuthType.values)
+                DropdownMenuItem(value: type, child: Text(type.name)),
+            ],
+            onChanged: (type) {
+              if (type != null) {
+                cubit.updateAuth(
+                  RequestAuthModel(
+                    type: type,
+                    username: draft.request.auth.username,
+                    passwordSecretRef: draft.request.auth.passwordSecretRef,
+                    tokenSecretRef: draft.request.auth.tokenSecretRef,
+                    apiKeyName: draft.request.auth.apiKeyName,
+                    apiKeySecretRef: draft.request.auth.apiKeySecretRef,
+                  ),
+                );
+              }
+            },
+          ),
+          if (draft.request.auth.type == AuthType.basic)
+            TextField(
+              controller: _username,
+              onChanged: (value) => cubit.updateAuth(
+                RequestAuthModel(
+                  type: draft.request.auth.type,
+                  username: value,
+                  passwordSecretRef: draft.request.auth.passwordSecretRef,
+                ),
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Basic username',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          if (draft.request.auth.type != AuthType.none)
+            TextField(
+              controller: _secretRef,
+              onChanged: (value) => cubit.updateAuth(
+                RequestAuthModel(
+                  type: draft.request.auth.type,
+                  username: draft.request.auth.username,
+                  passwordSecretRef: draft.request.auth.type == AuthType.basic
+                      ? value
+                      : draft.request.auth.passwordSecretRef,
+                  tokenSecretRef: draft.request.auth.type == AuthType.bearer
+                      ? value
+                      : draft.request.auth.tokenSecretRef,
+                  apiKeyName: draft.request.auth.apiKeyName,
+                  apiKeySecretRef:
+                      draft.request.auth.type == AuthType.apiKeyHeader ||
+                          draft.request.auth.type == AuthType.apiKeyQuery
+                      ? value
+                      : draft.request.auth.apiKeySecretRef,
+                ),
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Secure reference (never the secret value)',
+                border: OutlineInputBorder(),
+              ),
+            ),
           TextField(
             controller: _headers,
             minLines: 2,
@@ -206,6 +302,17 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
           const SizedBox(height: 12),
           Row(
             children: [
+              if (selectedOperation?.type == GraphqlOperationType.subscription)
+                OutlinedButton.icon(
+                  onPressed: subscription.isActive
+                      ? () => subscriptionCubit.disconnect(draft.id)
+                      : () =>
+                            subscriptionCubit.connect(draft.id, draft.request),
+                  icon: Icon(subscription.isActive ? Icons.stop : Icons.wifi),
+                  label: Text(subscription.isActive ? 'Disconnect' : 'Connect'),
+                ),
+              if (selectedOperation?.type == GraphqlOperationType.subscription)
+                const SizedBox(width: 8),
               FilledButton.icon(
                 onPressed: execution.isActive ? null : cubit.executeActive,
                 icon: const Icon(Icons.play_arrow),
@@ -229,6 +336,10 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
               ),
             ],
           ),
+          if (selectedOperation?.type == GraphqlOperationType.subscription)
+            Text(
+              'Subscription: ${subscription.phase.name} · events ${subscription.events.length} · dropped ${subscription.droppedEvents}',
+            ),
         ],
       );
       final response = _ResponsePanel(execution: execution);

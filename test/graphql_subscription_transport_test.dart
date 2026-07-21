@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:devroute_ai_studio/features/graphql/data/graphql_subscription_transport.dart';
+import 'package:devroute_ai_studio/features/graphql/application/graphql_subscription_service.dart';
 import 'package:devroute_ai_studio/features/graphql/domain/graphql_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -68,5 +69,25 @@ void main() {
       ),
       throwsA(isA<GraphqlFailure>()),
     );
+  });
+
+  test('subscription cubit owns tab state and bounded timeline', () async {
+    final cubit = GraphqlSubscriptionCubit(
+      GraphqlSubscriptionService(transport: GraphqlSubscriptionTransport()),
+    );
+    await cubit.connect(
+      'tab-a',
+      GraphqlRequest(
+        endpoint: endpoint,
+        document: 'subscription Tick { tick }',
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(cubit.state['tab-a']?.phase, GraphqlSubscriptionPhase.active);
+    expect(cubit.state['tab-a']?.events, hasLength(1));
+    expect(cubit.state.containsKey('tab-b'), isFalse);
+    await cubit.disconnect('tab-a');
+    expect(cubit.state['tab-a']?.phase, GraphqlSubscriptionPhase.disconnected);
+    await cubit.close();
   });
 }

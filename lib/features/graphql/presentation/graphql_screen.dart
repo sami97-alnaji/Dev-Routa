@@ -8,6 +8,7 @@ import '../data/graphql_repository.dart';
 import '../application/graphql_subscription_service.dart';
 import '../domain/graphql_document_parser.dart';
 import '../domain/graphql_models.dart';
+import 'graphql_history_comparison_view.dart';
 import 'graphql_workflow_cubit.dart';
 
 /// Presentation-only GraphQL editor. Execution and cancellation belong to the
@@ -495,20 +496,67 @@ class _HistoryPanel extends StatefulWidget {
     required this.onReplay,
     required this.onDelete,
   });
+
   final List<GraphqlHistoryEntry> entries;
   final ValueChanged<String> onSearch;
   final ValueChanged<GraphqlHistoryEntry> onReplay;
   final ValueChanged<GraphqlHistoryEntry> onDelete;
+
   @override
   State<_HistoryPanel> createState() => _HistoryPanelState();
 }
 
 class _HistoryPanelState extends State<_HistoryPanel> {
   final _search = TextEditingController();
+  final Set<String> _comparisonIds = <String>{};
+
   @override
   void dispose() {
     _search.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HistoryPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final validIds = widget.entries.map((entry) => entry.id).toSet();
+    _comparisonIds.removeWhere((id) => !validIds.contains(id));
+  }
+
+  void _toggleComparison(GraphqlHistoryEntry entry, bool selected) {
+    setState(() {
+      if (!selected) {
+        _comparisonIds.remove(entry.id);
+        return;
+      }
+      if (_comparisonIds.length == 2) {
+        _comparisonIds.remove(_comparisonIds.first);
+      }
+      _comparisonIds.add(entry.id);
+    });
+  }
+
+  Future<void> _showComparison() async {
+    if (_comparisonIds.length != 2) return;
+
+    final selected = _comparisonIds
+        .map((id) => widget.entries.firstWhere((entry) => entry.id == id))
+        .toList(growable: false);
+    final size = MediaQuery.sizeOf(context);
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        child: SizedBox(
+          width: size.width * 0.9,
+          height: size.height * 0.85,
+          child: GraphqlHistoryComparisonView(
+            before: selected[0],
+            after: selected[1],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -528,15 +576,39 @@ class _HistoryPanelState extends State<_HistoryPanel> {
         ),
       ),
       const SizedBox(height: 4),
+      Wrap(
+        spacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          FilledButton.tonalIcon(
+            key: const Key('open-graphql-history-comparison'),
+            onPressed: _comparisonIds.length == 2 ? _showComparison : null,
+            icon: const Icon(Icons.compare_arrows),
+            label: const Text('Compare'),
+          ),
+          Text('${_comparisonIds.length}/2 selected'),
+          if (_comparisonIds.isNotEmpty)
+            TextButton(
+              onPressed: () => setState(_comparisonIds.clear),
+              child: const Text('Clear'),
+            ),
+        ],
+      ),
+      const SizedBox(height: 4),
       Expanded(
         child: ListView(
           children: [
             for (final entry in widget.entries)
               ListTile(
                 dense: true,
+                leading: Checkbox(
+                  value: _comparisonIds.contains(entry.id),
+                  onChanged: (selected) =>
+                      _toggleComparison(entry, selected ?? false),
+                ),
                 title: Text(entry.operationType.name),
                 subtitle: Text(
-                  '${entry.summary['statusCode'] ?? '-'} · ${entry.createdAt.toLocal()}',
+                  '${entry.summary['statusCode'] ?? '-'} آ· ${entry.createdAt.toLocal()}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),

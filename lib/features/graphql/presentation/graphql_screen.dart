@@ -9,6 +9,7 @@ import '../application/graphql_subscription_service.dart';
 import '../domain/graphql_document_parser.dart';
 import '../domain/graphql_models.dart';
 import 'graphql_history_comparison_view.dart';
+import 'graphql_response_panel.dart';
 import 'graphql_workflow_cubit.dart';
 
 /// Presentation-only GraphQL editor. Execution and cancellation belong to the
@@ -343,7 +344,7 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
             ),
         ],
       );
-      final response = _ResponsePanel(execution: execution);
+      final response = GraphqlResponsePanel(execution: execution);
       final saved = _SavedRequestPanel(
         requests: state.savedRequests,
         search: _search,
@@ -459,34 +460,6 @@ class _SavedRequestPanel extends StatelessWidget {
       ),
     ],
   );
-}
-
-class _ResponsePanel extends StatelessWidget {
-  const _ResponsePanel({required this.execution});
-  final GraphqlTabExecution execution;
-  @override
-  Widget build(BuildContext context) {
-    final response = execution.response;
-    final body =
-        response?.safeJson ??
-        execution.failure?.message ??
-        'Run a query to inspect data, errors, and extensions.';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Response · ${execution.phase.name}',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        if (response != null)
-          Text(
-            'HTTP ${response.statusCode ?? '-'} · ${response.duration.inMilliseconds} ms · ${response.sizeBytes} bytes',
-          ),
-        const SizedBox(height: 8),
-        Expanded(child: SingleChildScrollView(child: SelectableText(body))),
-      ],
-    );
-  }
 }
 
 class _HistoryPanel extends StatefulWidget {

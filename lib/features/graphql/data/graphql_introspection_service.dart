@@ -18,7 +18,7 @@ class GraphqlIntrospectionService {
         enumValues(includeDeprecated: true) { name isDeprecated deprecationReason }
         fields(includeDeprecated: true) {
           name description isDeprecated deprecationReason
-          args { name description defaultValue(type { kind name ofType { kind name } }) }
+          args { name description defaultValue type { kind name ofType { kind name } } }
           type { kind name ofType { kind name ofType { kind name } } }
         }
       }

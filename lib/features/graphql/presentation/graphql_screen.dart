@@ -5,11 +5,13 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../shared/models/api_models.dart';
 import '../data/graphql_repository.dart';
+import '../application/graphql_schema_cubit.dart';
 import '../application/graphql_subscription_service.dart';
 import '../domain/graphql_document_parser.dart';
 import '../domain/graphql_models.dart';
 import 'graphql_history_comparison_view.dart';
 import 'graphql_response_panel.dart';
+import 'graphql_schema_panel.dart';
 import 'graphql_subscription_panel.dart';
 import 'graphql_workflow_cubit.dart';
 
@@ -72,6 +74,34 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
           '';
     }
     if (_username.text != auth.username) _username.text = auth.username;
+  }
+
+  Future<void> _openSchemaExplorer(
+    BuildContext context,
+    GraphqlRequest request,
+    GraphqlWorkflowCubit cubit,
+  ) async {
+    final size = MediaQuery.sizeOf(context);
+    final schemaCubit = context.read<GraphqlSchemaCubit>();
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => BlocProvider.value(
+        value: schemaCubit,
+        child: Dialog(
+          child: SizedBox(
+            width: size.width * 0.94,
+            height: size.height * 0.9,
+            child: GraphqlSchemaPanel(
+              request: request,
+              onUseOperation: (document) {
+                cubit.updateDocument(document);
+                Navigator.pop(dialogContext);
+              },
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -336,6 +366,14 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
                 label: Text(
                   draft.savedRequestId == null ? 'Save as new' : 'Save',
                 ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                key: const Key('open-graphql-schema-explorer'),
+                onPressed: () =>
+                    _openSchemaExplorer(context, draft.request, cubit),
+                icon: const Icon(Icons.account_tree_outlined),
+                label: const Text('Schema Explorer'),
               ),
             ],
           ),

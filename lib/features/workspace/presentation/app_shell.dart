@@ -16,6 +16,8 @@ import '../../../core/storage/local_workspace_repository.dart';
 import '../../../features/realtime/presentation/realtime_screen.dart';
 import '../../../features/graphql/presentation/graphql_screen.dart';
 import '../../../features/graphql/data/graphql_repository.dart';
+import '../../../features/graphql/data/graphql_introspection_service.dart';
+import '../../../features/graphql/application/graphql_schema_cubit.dart';
 import '../../../features/graphql/presentation/graphql_workflow_cubit.dart';
 import '../../../features/graphql/application/graphql_execution_service.dart';
 import '../../../features/graphql/application/graphql_subscription_service.dart';
@@ -174,7 +176,19 @@ class _AppShellState extends State<AppShell> {
             create: (context) => GraphqlSubscriptionCubit(
               context.read<GraphqlSubscriptionService>(),
             ),
-            child: const GraphqlScreen(),
+            child: BlocProvider(
+              create: (context) => GraphqlSchemaCubit(
+                context.read<GraphqlRepository>(),
+                workspaceId: workspaceId,
+                fetcher: (request) =>
+                    context.read<GraphqlIntrospectionService>().fetch(
+                      endpoint: request.endpoint,
+                      headers: request.headers,
+                      request: request,
+                    ),
+              )..load(),
+              child: const GraphqlScreen(),
+            ),
           ),
         );
       },

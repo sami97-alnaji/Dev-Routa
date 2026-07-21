@@ -578,13 +578,7 @@ class GraphqlRepository {
     final payload = jsonDecode(row.read<String>('snapshot_json')) as Map;
     final types = (payload['types'] as List? ?? const <Object?>[])
         .whereType<Map>()
-        .map(
-          (type) => schema.GraphqlSchemaType(
-            name: type['name']?.toString() ?? '',
-            kind: type['kind']?.toString() ?? '',
-            description: type['description']?.toString(),
-          ),
-        )
+        .map(_schemaTypeFromJson)
         .toList(growable: false);
     return GraphqlStoredSchemaSnapshot(
       id: row.read<String>('id'),
@@ -601,6 +595,44 @@ class GraphqlRepository {
       ),
     );
   }
+
+  schema.GraphqlSchemaType _schemaTypeFromJson(Map value) =>
+      schema.GraphqlSchemaType(
+        name: value['name']?.toString() ?? '',
+        kind: value['kind']?.toString() ?? '',
+        description: value['description']?.toString(),
+        fields: (value['fields'] as List? ?? const <Object?>[])
+            .whereType<Map>()
+            .map(_schemaFieldFromJson)
+            .toList(growable: false),
+        enumValues: (value['enumValues'] as List? ?? const <Object?>[])
+            .map((item) => item.toString())
+            .toList(growable: false),
+        interfaces: (value['interfaces'] as List? ?? const <Object?>[])
+            .map((item) => item.toString())
+            .toList(growable: false),
+      );
+
+  schema.GraphqlSchemaField _schemaFieldFromJson(Map value) =>
+      schema.GraphqlSchemaField(
+        name: value['name']?.toString() ?? '',
+        type: value['type']?.toString() ?? 'Unknown',
+        description: value['description']?.toString(),
+        args: (value['args'] as List? ?? const <Object?>[])
+            .whereType<Map>()
+            .map(_schemaArgumentFromJson)
+            .toList(growable: false),
+        isDeprecated: value['isDeprecated'] == true,
+        deprecationReason: value['deprecationReason']?.toString(),
+      );
+
+  schema.GraphqlSchemaArgument _schemaArgumentFromJson(Map value) =>
+      schema.GraphqlSchemaArgument(
+        name: value['name']?.toString() ?? '',
+        type: value['type']?.toString() ?? 'Unknown',
+        description: value['description']?.toString(),
+        defaultValue: value['defaultValue'],
+      );
 
   String _requestJson(GraphqlRequest request) => jsonEncode(<String, Object?>{
     'endpoint': request.endpoint,

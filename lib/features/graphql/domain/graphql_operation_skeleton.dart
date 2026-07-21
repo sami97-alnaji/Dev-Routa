@@ -13,11 +13,10 @@ class GraphqlOperationSkeleton {
     final arguments = <String>[];
     final variables = <String>[];
     for (final argument in field.args) {
+      if (!argument.type.endsWith('!')) continue;
       final variableName = _safeName(argument.name);
-      final required = argument.type.endsWith('!');
       variables.add('\$$variableName: ${argument.type}');
       arguments.add('${argument.name}: \$$variableName');
-      if (!required) variables.removeLast();
     }
     final argumentText = arguments.isEmpty ? '' : '(${arguments.join(', ')})';
     final selection = selectedFields == null

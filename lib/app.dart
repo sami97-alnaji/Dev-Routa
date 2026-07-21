@@ -12,6 +12,7 @@ import 'features/realtime/data/realtime_repository.dart';
 import 'features/realtime/data/realtime_transport.dart';
 import 'features/graphql/data/graphql_repository.dart';
 import 'features/graphql/data/graphql_http_service.dart';
+import 'features/graphql/data/graphql_introspection_service.dart';
 import 'features/graphql/application/graphql_execution_service.dart';
 import 'features/graphql/application/graphql_subscription_service.dart';
 import 'features/realtime/presentation/realtime_session_cubit.dart';
@@ -84,14 +85,19 @@ class DevRouteApp extends StatelessWidget {
             GraphqlHttpService(secureStorage: secureStorage),
             context.read<GraphqlRepository>(),
           ),
-          child: RepositoryProvider<GraphqlSubscriptionService>(
-            create: (_) => GraphqlSubscriptionService(),
-            child: MaterialApp.router(
-              title: 'DevRoute AI Studio',
-              theme: AppTheme.light,
-              darkTheme: AppTheme.dark,
-              themeMode: ThemeMode.dark,
-              routerConfig: _router,
+          child: RepositoryProvider<GraphqlIntrospectionService>(
+            create: (_) => GraphqlIntrospectionService(
+              GraphqlHttpService(secureStorage: secureStorage),
+            ),
+            child: RepositoryProvider<GraphqlSubscriptionService>(
+              create: (_) => GraphqlSubscriptionService(),
+              child: MaterialApp.router(
+                title: 'DevRoute AI Studio',
+                theme: AppTheme.light,
+                darkTheme: AppTheme.dark,
+                themeMode: ThemeMode.dark,
+                routerConfig: _router,
+              ),
             ),
           ),
         ),

@@ -2,6 +2,7 @@ import '../data/graphql_http_service.dart';
 import '../data/graphql_repository.dart';
 import '../domain/graphql_document_parser.dart';
 import '../domain/graphql_models.dart';
+import '../../../core/rest/variable_resolution_service.dart';
 
 /// Application boundary for HTTP GraphQL execution.  UI code never owns a
 /// Dio client, a cancellation token, response parsing, or history writes.
@@ -15,6 +16,7 @@ class GraphqlExecutionService {
     required String tabId,
     required String workspaceId,
     required GraphqlRequest request,
+    String? environmentId,
   }) async {
     final analysis = GraphqlDocumentParser.analyze(request.document);
     final operation = GraphqlDocumentParser.select(
@@ -35,14 +37,73 @@ class GraphqlExecutionService {
         'Subscriptions must use the subscription transport.',
       );
     }
-    final response = await _http.execute(tabId, request);
-    await _repository.record(
-      draftId: tabId,
-      workspaceId: workspaceId,
-      type: operation.type,
-      response: response,
+    final environment = <String, String>{};
+    try {
+      if (environmentId != null && environmentId.isNotEmpty) {
+        environment.addAll(
+          await _repository.executionEnvironment(environmentId),
+        );
+      }
+      final resolved = _resolveRequest(request, environment);
+      final response = await _http.execute(tabId, resolved);
+      await _repository.record(
+        draftId: tabId,
+        workspaceId: workspaceId,
+        type: operation.type,
+        response: response,
+        request: request,
+        operationName: operation.name,
+      );
+      return GraphqlExecutionResult(response: response, operation: operation);
+    } on StateError catch (error) {
+      throw GraphqlFailure(
+        GraphqlFailureCategory.missingSecret,
+        error.message,
+        cause: error,
+      );
+    } finally {
+      environment.clear();
+    }
+  }
+
+  GraphqlRequest _resolveRequest(
+    GraphqlRequest request,
+    Map<String, String> environment,
+  ) {
+    final resolver = VariableResolutionService();
+    String resolve(String value) {
+      final result = resolver.resolve(value, environment: environment);
+      if (!result.isValid) {
+        throw GraphqlFailure(
+          GraphqlFailureCategory.unresolvedVariable,
+          'Unresolved environment variables: ${[...result.unresolved, ...result.cycles].join(', ')}',
+        );
+      }
+      return result.value;
+    }
+
+    Object? resolveValue(Object? value) => switch (value) {
+      String text => resolve(text),
+      Map map => map.map(
+        (key, item) => MapEntry(key.toString(), resolveValue(item)),
+      ),
+      List list => list.map(resolveValue).toList(growable: false),
+      _ => value,
+    };
+
+    return GraphqlRequest(
+      endpoint: resolve(request.endpoint),
+      document: resolve(request.document),
+      operationName: request.operationName,
+      variables: resolveValue(request.variables) as Map<String, Object?>,
+      headers: request.headers.map(
+        (key, value) => MapEntry(key, resolve(value)),
+      ),
+      useGet: request.useGet,
+      extensions: resolveValue(request.extensions) as Map<String, Object?>,
+      auth: request.auth,
+      settings: request.settings,
     );
-    return GraphqlExecutionResult(response: response, operation: operation);
   }
 
   void cancel(String tabId) => _http.cancel(tabId);

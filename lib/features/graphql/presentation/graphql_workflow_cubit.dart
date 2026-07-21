@@ -207,6 +207,7 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
   void updateHeaders(Map<String, String> headers) => _replace(headers: headers);
   void updateExtensions(Map<String, Object?> extensions) =>
       _replace(extensions: extensions);
+  void updateUseGet(bool useGet) => _replace(useGet: useGet);
   void updateAuth(RequestAuthModel auth) => _replace(auth: auth);
   void updateSettings(RequestSettingsModel settings) =>
       _replace(settings: settings);
@@ -251,6 +252,7 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
         tabId: tab.id,
         workspaceId: tab.workspaceId,
         request: tab.request,
+        environmentId: tab.environmentId,
       );
       if (isClosed || state.executionFor(tab.id).id != executionId) return;
       _setExecution(
@@ -343,6 +345,7 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
     Map<String, Object?>? variables,
     Map<String, String>? headers,
     Map<String, Object?>? extensions,
+    bool? useGet,
     RequestAuthModel? auth,
     RequestSettingsModel? settings,
     String? environmentId,
@@ -367,7 +370,7 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
         variables: variables ?? old.request.variables,
         headers: headers ?? old.request.headers,
         extensions: extensions ?? old.request.extensions,
-        useGet: old.request.useGet,
+        useGet: useGet ?? old.request.useGet,
         auth: auth ?? old.request.auth,
         settings: settings ?? old.request.settings,
       ),

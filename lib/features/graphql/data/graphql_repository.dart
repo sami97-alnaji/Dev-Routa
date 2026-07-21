@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../../../core/security/secret_masker.dart';
 import '../../../core/storage/database_schema.dart';
 import '../../../shared/models/api_models.dart';
+import '../../../shared/services/service_interfaces.dart';
 import '../domain/graphql_models.dart';
 
 class GraphqlDraft {
@@ -54,10 +55,54 @@ class GraphqlSavedRequest {
   final DateTime updatedAt;
 }
 
+class GraphqlHistoryEntry {
+  const GraphqlHistoryEntry({
+    required this.id,
+    required this.draftId,
+    required this.workspaceId,
+    required this.operationType,
+    required this.summary,
+    required this.createdAt,
+  });
+  final String id;
+  final String? draftId;
+  final String workspaceId;
+  final GraphqlOperationType operationType;
+  final Map<String, Object?> summary;
+  final DateTime createdAt;
+}
+
 class GraphqlRepository {
-  GraphqlRepository(this._database);
+  GraphqlRepository(this._database, {SecureStorageService? secureStorage})
+    : _secureStorage = secureStorage;
   final AppDatabase _database;
+  final SecureStorageService? _secureStorage;
   static const _ids = Uuid();
+
+  Future<Map<String, String>> executionEnvironment(String environmentId) async {
+    final rows = await _database
+        .customSelect(
+          'SELECT name, value_or_secret_ref, is_secret, enabled FROM environment_variables WHERE environment_id = ? ORDER BY sort_order, name',
+          variables: <Variable>[Variable.withString(environmentId)],
+        )
+        .get();
+    final values = <String, String>{};
+    for (final row in rows) {
+      if (!row.read<bool>('enabled')) continue;
+      final key = row.read<String>('name');
+      if (!row.read<bool>('is_secret')) {
+        values[key] = row.read<String>('value_or_secret_ref');
+        continue;
+      }
+      final reference = row.read<String>('value_or_secret_ref');
+      final value = await _secureStorage?.readSecret(reference);
+      if (value == null || value.isEmpty) {
+        throw StateError('Missing secure environment reference for $key.');
+      }
+      values[key] = value;
+    }
+    return values;
+  }
 
   Future<GraphqlDraft> saveDraft({
     String? id,
@@ -119,6 +164,8 @@ class GraphqlRepository {
     required String workspaceId,
     required GraphqlOperationType type,
     required GraphqlResponse response,
+    GraphqlRequest? request,
+    String? operationName,
   }) => _database.customStatement(
     'INSERT INTO graphql_history (id, draft_id, workspace_id, operation_type, summary_json, created_at) VALUES (?, ?, ?, ?, ?, ?)',
     <Object?>[
@@ -126,10 +173,99 @@ class GraphqlRepository {
       draftId,
       workspaceId,
       type.name,
-      SecretMasker.redactText(response.safeJson),
+      SecretMasker.redactText(
+        jsonEncode(<String, Object?>{
+          'request': request == null
+              ? null
+              : <String, Object?>{
+                  'endpoint': request.endpoint,
+                  'document': request.document,
+                  'operationName': operationName ?? request.operationName,
+                  'variables': request.variables,
+                  'extensions': request.extensions,
+                  'headers': SecretMasker.redactHeaders(request.headers),
+                  'useGet': request.useGet,
+                  'authType': request.auth.type.name,
+                  'environmentId': null,
+                },
+          'statusCode': response.statusCode,
+          'completion': response.completion.name,
+          'data': response.data,
+          'errors': response.errors.map((item) => item.toJson()).toList(),
+          'extensions': response.extensions,
+          'headers': response.headers,
+          'durationMs': response.duration.inMilliseconds,
+          'sizeBytes': response.sizeBytes,
+          'rawPreview': response.rawPreview,
+          'truncated': response.truncated,
+        }),
+      ),
       DateTime.now().millisecondsSinceEpoch ~/ 1000,
     ],
   );
+
+  Future<List<GraphqlHistoryEntry>> history(
+    String workspaceId, {
+    String query = '',
+    GraphqlOperationType? operationType,
+  }) async {
+    final rows = await _database
+        .customSelect(
+          'SELECT * FROM graphql_history WHERE workspace_id = ? ORDER BY created_at DESC',
+          variables: <Variable>[Variable.withString(workspaceId)],
+        )
+        .get();
+    final normalized = query.trim().toLowerCase();
+    return rows
+        .map(
+          (row) => GraphqlHistoryEntry(
+            id: row.read<String>('id'),
+            draftId: row.read<String?>('draft_id'),
+            workspaceId: row.read<String>('workspace_id'),
+            operationType: GraphqlOperationType.values.byName(
+              row.read<String>('operation_type'),
+            ),
+            summary: _jsonMap(row.read<String>('summary_json')),
+            createdAt: row.read<DateTime>('created_at'),
+          ),
+        )
+        .where(
+          (entry) =>
+              (operationType == null || entry.operationType == operationType) &&
+              (normalized.isEmpty ||
+                  jsonEncode(entry.summary).toLowerCase().contains(normalized)),
+        )
+        .toList(growable: false);
+  }
+
+  Future<void> deleteHistory(String id) => _database.customStatement(
+    'DELETE FROM graphql_history WHERE id = ?',
+    <Object?>[id],
+  );
+
+  Future<void> clearHistory({String? workspaceId}) => workspaceId == null
+      ? _database.customStatement('DELETE FROM graphql_history')
+      : _database.customStatement(
+          'DELETE FROM graphql_history WHERE workspace_id = ?',
+          <Object?>[workspaceId],
+        );
+
+  Future<void> applyHistoryRetention({
+    required String workspaceId,
+    int maximumCount = 1000,
+    Duration maximumAge = const Duration(days: 30),
+  }) async {
+    final cutoff = DateTime.now().subtract(maximumAge);
+    await _database.customStatement(
+      'DELETE FROM graphql_history WHERE workspace_id = ? AND created_at < ?',
+      <Object?>[workspaceId, cutoff.millisecondsSinceEpoch ~/ 1000],
+    );
+    await _database.customStatement(
+      '''DELETE FROM graphql_history WHERE workspace_id = ? AND id NOT IN
+         (SELECT id FROM graphql_history WHERE workspace_id = ? ORDER BY created_at DESC LIMIT ?)''',
+      <Object?>[workspaceId, workspaceId, maximumCount],
+    );
+  }
 
   String _draftPayload(GraphqlDraft draft) => jsonEncode(<String, Object?>{
     'headers': draft.request.headers,

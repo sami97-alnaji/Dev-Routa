@@ -19,6 +19,8 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
   final _endpoint = TextEditingController();
   final _document = TextEditingController();
   final _variables = TextEditingController();
+  final _headers = TextEditingController();
+  final _extensions = TextEditingController();
   final _search = TextEditingController();
 
   @override
@@ -26,15 +28,27 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
     _endpoint.dispose();
     _document.dispose();
     _variables.dispose();
+    _headers.dispose();
+    _extensions.dispose();
     _search.dispose();
     super.dispose();
   }
 
-  void _sync(String endpoint, String document, Map<String, Object?> variables) {
+  void _sync(
+    String endpoint,
+    String document,
+    Map<String, Object?> variables,
+    Map<String, String> headers,
+    Map<String, Object?> extensions,
+  ) {
     if (_endpoint.text != endpoint) _endpoint.text = endpoint;
     if (_document.text != document) _document.text = document;
     final encoded = const JsonEncoder().convert(variables);
     if (_variables.text != encoded) _variables.text = encoded;
+    final headerText = const JsonEncoder().convert(headers);
+    if (_headers.text != headerText) _headers.text = headerText;
+    final extensionText = const JsonEncoder().convert(extensions);
+    if (_extensions.text != extensionText) _extensions.text = extensionText;
   }
 
   @override
@@ -49,6 +63,8 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
         draft.request.endpoint,
         draft.request.document,
         draft.request.variables,
+        draft.request.headers,
+        draft.request.extensions,
       );
       final analysis = GraphqlDocumentParser.analyze(draft.request.document);
       final editor = Column(
@@ -95,6 +111,55 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
                 DropdownMenuItem(value: op.name, child: Text(op.label)),
             ],
             onChanged: cubit.selectOperation,
+          ),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Use HTTP GET (queries only)'),
+            value: draft.request.useGet,
+            onChanged: cubit.updateUseGet,
+          ),
+          TextField(
+            controller: _headers,
+            minLines: 2,
+            maxLines: 4,
+            onChanged: (value) {
+              try {
+                final decoded = jsonDecode(value);
+                if (decoded is Map) {
+                  cubit.updateHeaders(
+                    decoded.map(
+                      (key, item) => MapEntry(key.toString(), item.toString()),
+                    ),
+                  );
+                }
+              } on FormatException {
+                // Keep invalid JSON visible until corrected.
+              }
+            },
+            decoration: const InputDecoration(
+              labelText: 'Enabled headers JSON',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _extensions,
+            minLines: 2,
+            maxLines: 4,
+            onChanged: (value) {
+              try {
+                final decoded = jsonDecode(value);
+                if (decoded is Map) {
+                  cubit.updateExtensions(decoded.cast<String, Object?>());
+                }
+              } on FormatException {
+                // Keep invalid JSON visible until corrected.
+              }
+            },
+            decoration: const InputDecoration(
+              labelText: 'Extensions JSON',
+              border: OutlineInputBorder(),
+            ),
           ),
           if (analysis.errors.isNotEmpty)
             Padding(

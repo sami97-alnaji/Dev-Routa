@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:devroute_ai_studio/core/storage/database_schema.dart'
     hide GraphqlSavedRequest;
 import 'package:devroute_ai_studio/features/graphql/data/graphql_repository.dart';
@@ -93,4 +95,38 @@ void main() {
       );
     },
   );
+
+  test('GraphQL history is sanitized, searchable, and retained', () async {
+    final response = GraphqlResponse(
+      statusCode: 200,
+      data: const <String, Object?>{'ok': true},
+      errors: const <GraphqlResponseError>[],
+      extensions: const <String, Object?>{'trace': 'local'},
+      duration: const Duration(milliseconds: 12),
+      sizeBytes: 20,
+      headers: const <String, String>{'set-cookie': '[REDACTED]'},
+      rawPreview: '{"ok":true}',
+    );
+    await repository.record(
+      workspaceId: 'workspace',
+      type: GraphqlOperationType.query,
+      response: response,
+      request: const GraphqlRequest(
+        endpoint: 'http://127.0.0.1/graphql',
+        document: 'query Users { users }',
+        headers: <String, String>{'Authorization': 'Bearer secret'},
+      ),
+    );
+    final entries = await repository.history('workspace', query: 'users');
+    expect(entries, hasLength(1));
+    expect(
+      jsonEncode(entries.single.summary),
+      isNot(contains('Bearer secret')),
+    );
+    await repository.applyHistoryRetention(
+      workspaceId: 'workspace',
+      maximumCount: 0,
+    );
+    expect(await repository.history('workspace'), isEmpty);
+  });
 }

@@ -18,6 +18,25 @@ void main() {
       final query = request.method == 'GET'
           ? request.uri.queryParameters['query'] ?? ''
           : (jsonDecode(body) as Map)['query'] as String;
+      if (query.contains('HttpError')) {
+        request.response.statusCode = 500;
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode(<String, Object?>{
+            'errors': <Object?>[
+              <String, Object?>{'message': 'Server failure'},
+            ],
+          }),
+        );
+        await request.response.close();
+        return;
+      }
+      if (query.contains('NonJson')) {
+        request.response.statusCode = 502;
+        request.response.write('upstream unavailable');
+        await request.response.close();
+        return;
+      }
       request.response.headers.contentType = ContentType.json;
       if (query.contains('Partial')) {
         request.response.write(
@@ -126,4 +145,35 @@ void main() {
       expect(response.errors.single.extensions['code'], 'FORBIDDEN');
     },
   );
+
+  test('classifies HTTP GraphQL and non-JSON failures safely', () async {
+    final graphqlFailure = await GraphqlHttpService().execute(
+      'http-graphql',
+      GraphqlRequest(endpoint: endpoint, document: 'query HttpError { ok }'),
+    );
+    expect(graphqlFailure.statusCode, 500);
+    expect(graphqlFailure.completion, GraphqlCompletionCategory.httpFailure);
+    expect(graphqlFailure.errors.single.message, 'Server failure');
+
+    expect(
+      () => GraphqlHttpService().execute(
+        'http-non-json',
+        GraphqlRequest(endpoint: endpoint, document: 'query NonJson { ok }'),
+      ),
+      throwsA(
+        isA<GraphqlFailure>().having(
+          (failure) => failure.category,
+          'category',
+          GraphqlFailureCategory.http,
+        ),
+      ),
+    );
+  });
+
+  test('bounded preview preserves Unicode and byte size', () {
+    final preview = boundedGraphqlPreview('مرحبا 😀 world', maxBytes: 10);
+    expect(preview.truncated, isTrue);
+    expect(() => utf8.encode(preview.value), returnsNormally);
+    expect(preview.value, isNot(contains('�')));
+  });
 }

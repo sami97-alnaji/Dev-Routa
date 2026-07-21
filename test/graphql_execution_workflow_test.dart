@@ -6,6 +6,7 @@ import 'package:devroute_ai_studio/core/storage/database_schema.dart'
 import 'package:devroute_ai_studio/features/graphql/application/graphql_execution_service.dart';
 import 'package:devroute_ai_studio/features/graphql/data/graphql_http_service.dart';
 import 'package:devroute_ai_studio/features/graphql/data/graphql_repository.dart';
+import 'package:devroute_ai_studio/features/graphql/domain/graphql_models.dart';
 import 'package:devroute_ai_studio/features/graphql/presentation/graphql_workflow_cubit.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -53,4 +54,31 @@ void main() {
     await database.close();
     await server.close(force: true);
   });
+
+  test(
+    'execution blocks unresolved environment placeholders before transport',
+    () async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      final repository = GraphqlRepository(database);
+      final service = GraphqlExecutionService(GraphqlHttpService(), repository);
+      expect(
+        () => service.execute(
+          tabId: 'tab',
+          workspaceId: 'workspace',
+          request: const GraphqlRequest(
+            endpoint: '{{missingEndpoint}}',
+            document: 'query Missing { ok }',
+          ),
+        ),
+        throwsA(
+          isA<GraphqlFailure>().having(
+            (failure) => failure.category,
+            'category',
+            GraphqlFailureCategory.unresolvedVariable,
+          ),
+        ),
+      );
+      await database.close();
+    },
+  );
 }

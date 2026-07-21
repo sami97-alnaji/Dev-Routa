@@ -76,7 +76,8 @@ class DevRouteApp extends StatelessWidget {
         ),
       ],
       child: RepositoryProvider<GraphqlRepository>(
-        create: (_) => GraphqlRepository(_database),
+        create: (_) =>
+            GraphqlRepository(_database, secureStorage: secureStorage),
         child: RepositoryProvider<GraphqlExecutionService>(
           create: (context) => GraphqlExecutionService(
             GraphqlHttpService(secureStorage: secureStorage),

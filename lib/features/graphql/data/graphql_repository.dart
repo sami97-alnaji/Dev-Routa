@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 import '../../../core/security/secret_masker.dart';
@@ -6,6 +7,7 @@ import '../../../core/storage/database_schema.dart';
 import '../../../shared/models/api_models.dart';
 import '../../../shared/services/service_interfaces.dart';
 import '../domain/graphql_models.dart';
+import '../domain/graphql_schema_models.dart' as schema;
 
 class GraphqlDraft {
   const GraphqlDraft({
@@ -72,12 +74,83 @@ class GraphqlHistoryEntry {
   final DateTime createdAt;
 }
 
+class GraphqlStoredSchemaSnapshot {
+  const GraphqlStoredSchemaSnapshot({
+    required this.id,
+    required this.workspaceId,
+    required this.endpointFingerprint,
+    required this.snapshot,
+    required this.createdAt,
+  });
+  final String id;
+  final String workspaceId;
+  final String endpointFingerprint;
+  final schema.GraphqlSchemaSnapshot snapshot;
+  final DateTime createdAt;
+}
+
 class GraphqlRepository {
   GraphqlRepository(this._database, {SecureStorageService? secureStorage})
     : _secureStorage = secureStorage;
   final AppDatabase _database;
   final SecureStorageService? _secureStorage;
   static const _ids = Uuid();
+
+  Future<GraphqlStoredSchemaSnapshot> saveSchemaSnapshot({
+    required String workspaceId,
+    required String endpoint,
+    required schema.GraphqlSchemaSnapshot snapshot,
+  }) async {
+    final fingerprint = sha256.convert(utf8.encode(endpoint)).toString();
+    final existing = await _database
+        .customSelect(
+          'SELECT * FROM graphql_schema_snapshots WHERE workspace_id = ? AND endpoint_fingerprint = ? AND schema_hash = ? LIMIT 1',
+          variables: <Variable>[
+            Variable.withString(workspaceId),
+            Variable.withString(fingerprint),
+            Variable.withString(snapshot.hash),
+          ],
+        )
+        .getSingleOrNull();
+    if (existing != null) return _schemaFromRow(existing);
+    final id = _ids.v4();
+    final now = DateTime.now();
+    await _database.customStatement(
+      'INSERT INTO graphql_schema_snapshots (id, workspace_id, endpoint_fingerprint, schema_hash, snapshot_json, fetched_at) VALUES (?, ?, ?, ?, ?, ?)',
+      <Object?>[
+        id,
+        workspaceId,
+        fingerprint,
+        snapshot.hash,
+        snapshot.safeJson,
+        now.millisecondsSinceEpoch ~/ 1000,
+      ],
+    );
+    return GraphqlStoredSchemaSnapshot(
+      id: id,
+      workspaceId: workspaceId,
+      endpointFingerprint: fingerprint,
+      snapshot: snapshot,
+      createdAt: now,
+    );
+  }
+
+  Future<List<GraphqlStoredSchemaSnapshot>> schemaSnapshots(
+    String workspaceId,
+  ) async =>
+      (await _database
+              .customSelect(
+                'SELECT * FROM graphql_schema_snapshots WHERE workspace_id = ? ORDER BY fetched_at DESC',
+                variables: <Variable>[Variable.withString(workspaceId)],
+              )
+              .get())
+          .map(_schemaFromRow)
+          .toList(growable: false);
+
+  Future<void> deleteSchemaSnapshot(String id) => _database.customStatement(
+    'DELETE FROM graphql_schema_snapshots WHERE id = ?',
+    <Object?>[id],
+  );
 
   Future<Map<String, String>> executionEnvironment(String environmentId) async {
     final rows = await _database
@@ -497,6 +570,34 @@ class GraphqlRepository {
             ),
         auth: _authFromJson(payload['auth']),
         settings: _settingsFromJson(payload['settings']),
+      ),
+    );
+  }
+
+  GraphqlStoredSchemaSnapshot _schemaFromRow(QueryRow row) {
+    final payload = jsonDecode(row.read<String>('snapshot_json')) as Map;
+    final types = (payload['types'] as List? ?? const <Object?>[])
+        .whereType<Map>()
+        .map(
+          (type) => schema.GraphqlSchemaType(
+            name: type['name']?.toString() ?? '',
+            kind: type['kind']?.toString() ?? '',
+            description: type['description']?.toString(),
+          ),
+        )
+        .toList(growable: false);
+    return GraphqlStoredSchemaSnapshot(
+      id: row.read<String>('id'),
+      workspaceId: row.read<String>('workspace_id'),
+      endpointFingerprint: row.read<String>('endpoint_fingerprint'),
+      createdAt: row.read<DateTime>('fetched_at'),
+      snapshot: schema.GraphqlSchemaSnapshot(
+        hash: row.read<String>('schema_hash'),
+        fetchedAt: row.read<DateTime>('fetched_at'),
+        queryRoot: payload['queryRoot']?.toString(),
+        mutationRoot: payload['mutationRoot']?.toString(),
+        subscriptionRoot: payload['subscriptionRoot']?.toString(),
+        types: types,
       ),
     );
   }

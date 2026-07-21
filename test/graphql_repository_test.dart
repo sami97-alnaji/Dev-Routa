@@ -1,9 +1,10 @@
 import 'dart:convert';
 
 import 'package:devroute_ai_studio/core/storage/database_schema.dart'
-    hide GraphqlSavedRequest;
+    hide GraphqlSavedRequest, GraphqlSchemaSnapshot;
 import 'package:devroute_ai_studio/features/graphql/data/graphql_repository.dart';
 import 'package:devroute_ai_studio/features/graphql/domain/graphql_models.dart';
+import 'package:devroute_ai_studio/features/graphql/domain/graphql_schema_models.dart';
 import 'package:devroute_ai_studio/shared/models/api_models.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -129,4 +130,32 @@ void main() {
     );
     expect(await repository.history('workspace'), isEmpty);
   });
+
+  test(
+    'schema snapshots suppress identical duplicates and can be deleted',
+    () async {
+      final snapshot = GraphqlSchemaSnapshot(
+        hash: 'hash-1',
+        fetchedAt: DateTime(2026, 1, 1),
+        types: <GraphqlSchemaType>[
+          GraphqlSchemaType(name: 'Query', kind: 'OBJECT'),
+        ],
+        queryRoot: 'Query',
+      );
+      final first = await repository.saveSchemaSnapshot(
+        workspaceId: 'workspace',
+        endpoint: 'http://local/graphql',
+        snapshot: snapshot,
+      );
+      final duplicate = await repository.saveSchemaSnapshot(
+        workspaceId: 'workspace',
+        endpoint: 'http://local/graphql',
+        snapshot: snapshot,
+      );
+      expect(duplicate.id, first.id);
+      expect(await repository.schemaSnapshots('workspace'), hasLength(1));
+      await repository.deleteSchemaSnapshot(first.id);
+      expect(await repository.schemaSnapshots('workspace'), isEmpty);
+    },
+  );
 }

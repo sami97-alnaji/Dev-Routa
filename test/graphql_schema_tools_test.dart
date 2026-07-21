@@ -1,4 +1,5 @@
 import 'package:devroute_ai_studio/features/graphql/domain/graphql_schema_models.dart';
+import 'package:devroute_ai_studio/features/graphql/domain/graphql_operation_skeleton.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Map<String, Object?> _schema({bool extra = false}) => <String, Object?>{
@@ -45,5 +46,25 @@ void main() {
     );
     expect(diff.addedFields, contains('Query.health'));
     expect(diff.classification, 'Non-breaking candidate');
+  });
+
+  test('operation skeleton preserves required arguments and selection', () {
+    const root = GraphqlSchemaType(name: 'Query', kind: 'OBJECT');
+    const field = GraphqlSchemaField(
+      name: 'user',
+      type: 'User',
+      args: <GraphqlSchemaArgument>[
+        GraphqlSchemaArgument(name: 'id', type: 'ID!'),
+      ],
+    );
+    expect(
+      GraphqlOperationSkeleton.generate(
+        root: root,
+        field: field,
+        operationType: 'query',
+        operationName: 'GetUser',
+      ),
+      'query GetUser(\$id: ID!) { user(id: \$id) { __typename } }',
+    );
   });
 }

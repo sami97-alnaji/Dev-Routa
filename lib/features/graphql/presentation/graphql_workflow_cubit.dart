@@ -8,11 +8,24 @@ import '../application/graphql_execution_service.dart';
 import '../data/graphql_repository.dart';
 import '../domain/graphql_models.dart';
 
+enum GraphqlHistoryOutcomeFilter {
+  all,
+  success,
+  graphqlError,
+  transportFailure,
+  cancelled,
+}
+
 class GraphqlWorkflowState {
   const GraphqlWorkflowState({
     required this.tabs,
     this.savedRequests = const <GraphqlSavedRequest>[],
     this.history = const <GraphqlHistoryEntry>[],
+    this.allHistory = const <GraphqlHistoryEntry>[],
+    this.historyQuery = '',
+    this.historyOutcomeFilter = GraphqlHistoryOutcomeFilter.all,
+    this.historyOperationTypeFilter,
+    this.historyEndpointFilter,
     this.activeIndex = 0,
     this.activeOperationIds = const <String>{},
     this.activeSubscriptionIds = const <String>{},
@@ -24,6 +37,23 @@ class GraphqlWorkflowState {
   final List<GraphqlDraft> tabs;
   final List<GraphqlSavedRequest> savedRequests;
   final List<GraphqlHistoryEntry> history;
+  final List<GraphqlHistoryEntry> allHistory;
+  final String historyQuery;
+  final GraphqlHistoryOutcomeFilter historyOutcomeFilter;
+  final GraphqlOperationType? historyOperationTypeFilter;
+  final String? historyEndpointFilter;
+  bool get hasActiveHistoryFilters =>
+      historyQuery.isNotEmpty ||
+      historyOutcomeFilter != GraphqlHistoryOutcomeFilter.all ||
+      historyOperationTypeFilter != null ||
+      historyEndpointFilter != null;
+  List<String> get availableHistoryEndpoints =>
+      allHistory
+          .map((item) => item.endpoint)
+          .where((item) => item.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
   final int activeIndex;
   final Set<String> activeOperationIds;
   final Set<String> activeSubscriptionIds;
@@ -43,6 +73,13 @@ class GraphqlWorkflowState {
     List<GraphqlDraft>? tabs,
     List<GraphqlSavedRequest>? savedRequests,
     List<GraphqlHistoryEntry>? history,
+    List<GraphqlHistoryEntry>? allHistory,
+    String? historyQuery,
+    GraphqlHistoryOutcomeFilter? historyOutcomeFilter,
+    GraphqlOperationType? historyOperationTypeFilter,
+    String? historyEndpointFilter,
+    bool clearHistoryOperationTypeFilter = false,
+    bool clearHistoryEndpointFilter = false,
     int? activeIndex,
     Set<String>? activeOperationIds,
     Set<String>? activeSubscriptionIds,
@@ -53,6 +90,15 @@ class GraphqlWorkflowState {
     tabs: tabs ?? this.tabs,
     savedRequests: savedRequests ?? this.savedRequests,
     history: history ?? this.history,
+    allHistory: allHistory ?? this.allHistory,
+    historyQuery: historyQuery ?? this.historyQuery,
+    historyOutcomeFilter: historyOutcomeFilter ?? this.historyOutcomeFilter,
+    historyOperationTypeFilter: clearHistoryOperationTypeFilter
+        ? null
+        : (historyOperationTypeFilter ?? this.historyOperationTypeFilter),
+    historyEndpointFilter: clearHistoryEndpointFilter
+        ? null
+        : (historyEndpointFilter ?? this.historyEndpointFilter),
     activeIndex: activeIndex ?? this.activeIndex,
     activeOperationIds: activeOperationIds ?? this.activeOperationIds,
     activeSubscriptionIds: activeSubscriptionIds ?? this.activeSubscriptionIds,
@@ -128,15 +174,17 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
     final drafts = await _repository.drafts(workspaceId);
     final saved = await _repository.requests(workspaceId);
     final history = await _repository.history(workspaceId);
-    if (isClosed) return;
+    if (isClosed) {
+      return;
+    }
     // AppShell starts restoration asynchronously. Do not let its stale result
     // overwrite a tab the user has already edited or saved.
     if (!identical(state.tabs, tabsAtStart)) {
-      emit(state.copyWith(savedRequests: saved, history: history));
+      emit(_withHistory(state.copyWith(savedRequests: saved), history));
       return;
     }
     if (drafts.isEmpty) {
-      emit(state.copyWith(savedRequests: saved, history: history));
+      emit(_withHistory(state.copyWith(savedRequests: saved), history));
       return;
     }
     final ordered = List<GraphqlDraft>.of(drafts)
@@ -439,9 +487,88 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
     if (!isClosed) emit(state.copyWith(savedRequests: saved));
   }
 
-  Future<void> refreshHistory([String query = '']) async {
-    final entries = await _repository.history(workspaceId, query: query);
-    if (!isClosed) emit(state.copyWith(history: entries));
+  Future<void> refreshHistory([String? query]) async {
+    final entries = await _repository.history(workspaceId);
+    if (!isClosed) {
+      emit(
+        _withHistory(
+          state.copyWith(historyQuery: query ?? state.historyQuery),
+          entries,
+        ),
+      );
+    }
+  }
+
+  void setHistoryQuery(String value) =>
+      emit(_withHistory(state.copyWith(historyQuery: value), state.allHistory));
+  void setHistoryOutcomeFilter(GraphqlHistoryOutcomeFilter value) => emit(
+    _withHistory(state.copyWith(historyOutcomeFilter: value), state.allHistory),
+  );
+  void setHistoryOperationTypeFilter(GraphqlOperationType? value) => emit(
+    _withHistory(
+      state.copyWith(
+        historyOperationTypeFilter: value,
+        clearHistoryOperationTypeFilter: value == null,
+      ),
+      state.allHistory,
+    ),
+  );
+  void setHistoryEndpointFilter(String? value) => emit(
+    _withHistory(
+      state.copyWith(
+        historyEndpointFilter: value,
+        clearHistoryEndpointFilter: value == null,
+      ),
+      state.allHistory,
+    ),
+  );
+  void clearHistoryFilters() => emit(
+    _withHistory(
+      state.copyWith(
+        historyQuery: '',
+        historyOutcomeFilter: GraphqlHistoryOutcomeFilter.all,
+        clearHistoryOperationTypeFilter: true,
+        clearHistoryEndpointFilter: true,
+      ),
+      state.allHistory,
+    ),
+  );
+
+  GraphqlWorkflowState _withHistory(
+    GraphqlWorkflowState next,
+    List<GraphqlHistoryEntry> all,
+  ) {
+    final endpoint = next.historyEndpointFilter;
+    final filtered = all.where((entry) {
+      final completion = entry.completion;
+      final outcome = switch (next.historyOutcomeFilter) {
+        GraphqlHistoryOutcomeFilter.all => true,
+        GraphqlHistoryOutcomeFilter.success =>
+          completion == GraphqlCompletionCategory.success,
+        GraphqlHistoryOutcomeFilter.graphqlError =>
+          completion == GraphqlCompletionCategory.graphqlFailure ||
+              completion == GraphqlCompletionCategory.partialSuccess,
+        GraphqlHistoryOutcomeFilter.transportFailure =>
+          completion == GraphqlCompletionCategory.httpFailure ||
+              (completion == null && entry.completionName != 'cancelled'),
+        GraphqlHistoryOutcomeFilter.cancelled =>
+          entry.completionName == 'cancelled',
+      };
+      return outcome &&
+          (next.historyOperationTypeFilter == null ||
+              entry.operationType == next.historyOperationTypeFilter) &&
+          (endpoint == null || entry.endpoint == endpoint) &&
+          (next.historyQuery.isEmpty ||
+              entry.summary.toString().toLowerCase().contains(
+                next.historyQuery.toLowerCase(),
+              ));
+    }).toList();
+    return next.copyWith(
+      allHistory: all,
+      history: filtered,
+      clearHistoryEndpointFilter:
+          endpoint != null && !all.any((item) => item.endpoint == endpoint),
+    );
   }
 
   Future<void> deleteHistory(String id) async {

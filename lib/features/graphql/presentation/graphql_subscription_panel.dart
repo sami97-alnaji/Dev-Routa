@@ -314,7 +314,7 @@ class _GraphqlSubscriptionPanelState extends State<GraphqlSubscriptionPanel> {
                       child: ListTile(
                         leading: CircleAvatar(child: Text('${event.sequence}')),
                         title: Text(
-                          '#${event.sequence} آ· ${event.receivedAt.toLocal()}',
+                          '#${event.sequence} · ${event.receivedAt.toLocal()}',
                         ),
                         subtitle: SelectableText(
                           _safeEventText(event),

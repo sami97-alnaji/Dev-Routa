@@ -14,14 +14,14 @@ abstract final class SecretMasker {
   /// history, exports, diagnostics, or optional AI payload construction.
   static String redactText(String value) => value.replaceAllMapped(
     RegExp(
-      r'(authorization|api[-_ ]?key|access[-_ ]?token|password|cookie)(["\s]*[:=]\s*["\s]*)([^"\s,;}]+)',
+      r'(authorization|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|token|password|cookie|secret)(["\s]*[:=]\s*["\s]*)([^"\s,;}]+)',
       caseSensitive: false,
     ),
     (match) => '${match.group(1)}${match.group(2)}[REDACTED]',
   );
 
   static bool _isSensitive(String name) => RegExp(
-    r'authorization|api[-_ ]?key|token|cookie|password',
+    r'authorization|api[-_ ]?key|token|cookie|password|secret',
     caseSensitive: false,
   ).hasMatch(name);
 }

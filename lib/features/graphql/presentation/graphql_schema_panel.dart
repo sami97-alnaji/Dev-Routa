@@ -232,7 +232,7 @@ class _GraphqlSchemaPanelState extends State<GraphqlSchemaPanel> {
                             DropdownMenuItem(
                               value: item.id,
                               child: Text(
-                                '${item.snapshot.hash.substring(0, 8)} آ· ${item.createdAt.toLocal()}',
+                                '${item.snapshot.hash.substring(0, 8)} · ${item.createdAt.toLocal()}',
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),

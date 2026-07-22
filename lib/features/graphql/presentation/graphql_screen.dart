@@ -659,6 +659,7 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
               onConnect: (policy) => subscriptionCubit.connect(
                 draft.id,
                 draft.request,
+                environmentId: draft.environmentId,
                 reconnectPolicy: policy,
               ),
               onDisconnect: () => subscriptionCubit.disconnect(draft.id),
@@ -683,7 +684,18 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
       );
       final history = _HistoryPanel(
         entries: state.history,
-        onSearch: cubit.refreshHistory,
+        totalEntries: state.allHistory.length,
+        query: state.historyQuery,
+        outcome: state.historyOutcomeFilter,
+        operationType: state.historyOperationTypeFilter,
+        endpoint: state.historyEndpointFilter,
+        endpoints: state.availableHistoryEndpoints,
+        hasActiveFilters: state.hasActiveHistoryFilters,
+        onSearch: cubit.setHistoryQuery,
+        onOutcome: cubit.setHistoryOutcomeFilter,
+        onOperationType: cubit.setHistoryOperationTypeFilter,
+        onEndpoint: cubit.setHistoryEndpointFilter,
+        onClearFilters: cubit.clearHistoryFilters,
         onReplay: cubit.replayHistory,
         onDelete: (entry) => cubit.deleteHistory(entry.id),
       );
@@ -897,13 +909,35 @@ class _SavedRequestPanel extends StatelessWidget {
 class _HistoryPanel extends StatefulWidget {
   const _HistoryPanel({
     required this.entries,
+    required this.totalEntries,
+    required this.query,
+    required this.outcome,
+    required this.operationType,
+    required this.endpoint,
+    required this.endpoints,
+    required this.hasActiveFilters,
     required this.onSearch,
+    required this.onOutcome,
+    required this.onOperationType,
+    required this.onEndpoint,
+    required this.onClearFilters,
     required this.onReplay,
     required this.onDelete,
   });
 
   final List<GraphqlHistoryEntry> entries;
+  final int totalEntries;
+  final String query;
+  final GraphqlHistoryOutcomeFilter outcome;
+  final GraphqlOperationType? operationType;
+  final String? endpoint;
+  final List<String> endpoints;
+  final bool hasActiveFilters;
   final ValueChanged<String> onSearch;
+  final ValueChanged<GraphqlHistoryOutcomeFilter> onOutcome;
+  final ValueChanged<GraphqlOperationType?> onOperationType;
+  final ValueChanged<String?> onEndpoint;
+  final VoidCallback onClearFilters;
   final ValueChanged<GraphqlHistoryEntry> onReplay;
   final ValueChanged<GraphqlHistoryEntry> onDelete;
 
@@ -916,6 +950,12 @@ class _HistoryPanelState extends State<_HistoryPanel> {
   final Set<String> _comparisonIds = <String>{};
 
   @override
+  void initState() {
+    super.initState();
+    _search.text = widget.query;
+  }
+
+  @override
   void dispose() {
     _search.dispose();
     super.dispose();
@@ -926,6 +966,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
     super.didUpdateWidget(oldWidget);
     final validIds = widget.entries.map((entry) => entry.id).toSet();
     _comparisonIds.removeWhere((id) => !validIds.contains(id));
+    if (_search.text != widget.query) _search.text = widget.query;
   }
 
   void _toggleComparison(GraphqlHistoryEntry entry, bool selected) {
@@ -981,6 +1022,90 @@ class _HistoryPanelState extends State<_HistoryPanel> {
         ),
       ),
       const SizedBox(height: 4),
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final filters = <Widget>[
+            DropdownButton<GraphqlHistoryOutcomeFilter>(
+              key: const Key('graphql-history-outcome-filter'),
+              value: widget.outcome,
+              onChanged: (value) {
+                if (value != null) widget.onOutcome(value);
+              },
+              items: GraphqlHistoryOutcomeFilter.values
+                  .map(
+                    (value) => DropdownMenuItem(
+                      value: value,
+                      child: Text(_outcomeLabel(value)),
+                    ),
+                  )
+                  .toList(),
+            ),
+            DropdownButton<GraphqlOperationType?>(
+              key: const Key('graphql-history-operation-filter'),
+              value: widget.operationType,
+              onChanged: widget.onOperationType,
+              items: <DropdownMenuItem<GraphqlOperationType?>>[
+                const DropdownMenuItem(
+                  value: null,
+                  child: Text('All operations'),
+                ),
+                ...GraphqlOperationType.values.map(
+                  (value) =>
+                      DropdownMenuItem(value: value, child: Text(value.name)),
+                ),
+              ],
+            ),
+            DropdownButton<String?>(
+              key: const Key('graphql-history-endpoint-filter'),
+              value: widget.endpoint,
+              onChanged: widget.onEndpoint,
+              items: <DropdownMenuItem<String?>>[
+                const DropdownMenuItem(
+                  value: null,
+                  child: Text('All endpoints'),
+                ),
+                ...widget.endpoints.map(
+                  (value) => DropdownMenuItem(
+                    value: value,
+                    child: Text(
+                      _safeEndpointLabel(value),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (widget.hasActiveFilters)
+              TextButton(
+                key: const Key('graphql-history-clear-filters'),
+                onPressed: widget.onClearFilters,
+                child: const Text('Clear filters'),
+              ),
+            Text(
+              'Showing ${widget.entries.length} of ${widget.totalEntries}',
+              key: const Key('graphql-history-result-count'),
+            ),
+          ];
+          return constraints.maxWidth < 500
+              ? SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: filters
+                        .expand(
+                          (item) => <Widget>[item, const SizedBox(width: 8)],
+                        )
+                        .toList(growable: false),
+                  ),
+                )
+              : Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: filters,
+                );
+        },
+      ),
       Wrap(
         spacing: 8,
         crossAxisAlignment: WrapCrossAlignment.center,
@@ -1029,4 +1154,19 @@ class _HistoryPanelState extends State<_HistoryPanel> {
       ),
     ],
   );
+
+  static String _outcomeLabel(GraphqlHistoryOutcomeFilter value) =>
+      switch (value) {
+        GraphqlHistoryOutcomeFilter.all => 'All outcomes',
+        GraphqlHistoryOutcomeFilter.success => 'Success',
+        GraphqlHistoryOutcomeFilter.graphqlError => 'GraphQL error',
+        GraphqlHistoryOutcomeFilter.transportFailure => 'Transport failure',
+        GraphqlHistoryOutcomeFilter.cancelled => 'Cancelled',
+      };
+
+  static String _safeEndpointLabel(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null) return value.split('?').first;
+    return uri.replace(query: '', fragment: '').toString();
+  }
 }

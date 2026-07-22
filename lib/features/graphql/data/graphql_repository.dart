@@ -122,6 +122,17 @@ class GraphqlHistoryEntry {
   final GraphqlOperationType operationType;
   final Map<String, Object?> summary;
   final DateTime createdAt;
+
+  String get endpoint =>
+      (summary['request'] as Map?)?['endpoint']?.toString() ?? '';
+  String? get completionName => summary['completion']?.toString();
+  GraphqlCompletionCategory? get completion => switch (completionName) {
+    'success' => GraphqlCompletionCategory.success,
+    'partialSuccess' => GraphqlCompletionCategory.partialSuccess,
+    'graphqlFailure' => GraphqlCompletionCategory.graphqlFailure,
+    'httpFailure' => GraphqlCompletionCategory.httpFailure,
+    _ => null,
+  };
 }
 
 class GraphqlStoredSchemaSnapshot {
@@ -331,6 +342,48 @@ class GraphqlRepository {
     ],
   );
 
+  Future<void> recordFailure({
+    String? draftId,
+    required String workspaceId,
+    required GraphqlOperationType type,
+    required GraphqlFailure failure,
+    GraphqlRequest? request,
+    String? operationName,
+  }) => _database.customStatement(
+    'INSERT INTO graphql_history (id, draft_id, workspace_id, operation_type, summary_json, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    <Object?>[
+      _ids.v4(),
+      draftId,
+      workspaceId,
+      type.name,
+      SecretMasker.redactText(
+        jsonEncode(<String, Object?>{
+          'request': request == null
+              ? null
+              : <String, Object?>{
+                  'endpoint': request.endpoint,
+                  'document': request.document,
+                  'operationName': operationName ?? request.operationName,
+                  'variables': request.variables,
+                  'extensions': request.extensions,
+                  'headers': SecretMasker.redactHeaders(request.headers),
+                  'useGet': request.useGet,
+                  'authType': request.auth.type.name,
+                  'environmentId': null,
+                },
+          'completion': failure.category == GraphqlFailureCategory.cancelled
+              ? 'cancelled'
+              : 'httpFailure',
+          'failureCategory': failure.category.name,
+          'errors': <Map<String, String>>[
+            <String, String>{'message': failure.message},
+          ],
+        }),
+      ),
+      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    ],
+  );
+
   Future<List<GraphqlHistoryEntry>> history(
     String workspaceId, {
     String query = '',
@@ -445,7 +498,7 @@ class GraphqlRepository {
     required GraphqlRequest request,
     String? collectionId,
     String? folderId,
-    int sortOrder = 0,
+    int? sortOrder,
   }) async {
     final trimmedName = name.trim();
     if (trimmedName.isEmpty) {
@@ -474,11 +527,7 @@ class GraphqlRepository {
         targetFolderId,
         trimmedName,
         _requestJson(request),
-        existing == null
-            ? sortOrder
-            : sortOrder == 0
-            ? existing.sortOrder
-            : sortOrder,
+        sortOrder ?? existing?.sortOrder ?? 0,
         (existing?.createdAt ?? now).millisecondsSinceEpoch ~/ 1000,
         now.millisecondsSinceEpoch ~/ 1000,
       ],
@@ -490,11 +539,7 @@ class GraphqlRepository {
       request: request,
       collectionId: targetCollectionId,
       folderId: targetFolderId,
-      sortOrder: existing == null
-          ? sortOrder
-          : sortOrder == 0
-          ? existing.sortOrder
-          : sortOrder,
+      sortOrder: sortOrder ?? existing?.sortOrder ?? 0,
       createdAt: now,
       updatedAt: now,
     );
@@ -708,7 +753,7 @@ class GraphqlRepository {
     final conflict = (await requests(workspaceId)).any(
       (item) =>
           item.id != excludingId &&
-          item.name == name &&
+          item.name.toLowerCase() == name.toLowerCase() &&
           item.collectionId == collectionId &&
           item.folderId == folderId,
     );

@@ -96,7 +96,7 @@ void main() {
         document: 'subscription Tick { tick }',
       ),
     );
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await _waitUntil(() => cubit.state['tab-a']?.events.isNotEmpty ?? false);
     expect(cubit.state['tab-a']?.phase, GraphqlSubscriptionPhase.active);
     expect(cubit.state['tab-a']?.events, hasLength(1));
     expect(cubit.state.containsKey('tab-b'), isFalse);

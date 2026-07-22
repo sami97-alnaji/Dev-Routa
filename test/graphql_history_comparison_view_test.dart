@@ -115,7 +115,7 @@ void main() {
     expect(
       find.descendant(
         of: beforeIdentity,
-        matching: find.text('query آ· before'),
+        matching: find.text('query · before'),
       ),
       findsOneWidget,
     );
@@ -124,10 +124,7 @@ void main() {
     await tester.pump();
 
     expect(
-      find.descendant(
-        of: beforeIdentity,
-        matching: find.text('query آ· after'),
-      ),
+      find.descendant(of: beforeIdentity, matching: find.text('query · after')),
       findsOneWidget,
     );
   });

@@ -253,7 +253,7 @@ class _HistoryIdentity extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: Theme.of(context).textTheme.labelLarge),
-        Text('${entry.operationType.name} آ· ${entry.id}'),
+        Text('${entry.operationType.name} · ${entry.id}'),
         Text(
           entry.createdAt.toLocal().toString(),
           style: Theme.of(context).textTheme.bodySmall,

@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../data/graphql_subscription_transport.dart';
 import '../domain/graphql_document_parser.dart';
 import '../domain/graphql_models.dart';
+import 'graphql_request_resolver.dart';
 
 enum GraphqlSubscriptionPhase {
   idle,
@@ -95,22 +96,37 @@ class GraphqlSubscriptionTabState {
 }
 
 class GraphqlSubscriptionService {
-  GraphqlSubscriptionService({GraphqlSubscriptionTransport? transport})
-    : _transport = transport ?? GraphqlSubscriptionTransport();
+  GraphqlSubscriptionService({
+    GraphqlSubscriptionTransport? transport,
+    GraphqlRequestResolver? resolver,
+  }) : _transport = transport ?? GraphqlSubscriptionTransport(),
+       _resolver = resolver;
   final GraphqlSubscriptionTransport _transport;
+  final GraphqlRequestResolver? _resolver;
   final Map<String, GraphqlSubscriptionConnection> _connections =
       <String, GraphqlSubscriptionConnection>{};
 
   Future<GraphqlSubscriptionConnection> connect({
     required String tabId,
     required GraphqlRequest request,
+    String? environmentId,
     Map<String, Object?> connectionParams = const <String, Object?>{},
     Duration ackTimeout = const Duration(seconds: 5),
   }) async {
-    final analysis = GraphqlDocumentParser.analyze(request.document);
+    final resolved = _resolver == null
+        ? null
+        : await _resolver.resolve(
+            request,
+            environmentId: environmentId,
+            connectionInitPayload: connectionParams,
+          );
+    final runtimeRequest = resolved?.request ?? request;
+    final runtimeConnectionParams =
+        resolved?.connectionInitPayload ?? connectionParams;
+    final analysis = GraphqlDocumentParser.analyze(runtimeRequest.document);
     final operation = GraphqlDocumentParser.select(
       analysis,
-      request.operationName,
+      runtimeRequest.operationName,
     );
     if (!analysis.isValid || operation == null) {
       throw GraphqlFailure(
@@ -129,11 +145,11 @@ class GraphqlSubscriptionService {
 
     await disconnect(tabId);
     final connection = await _transport.connect(
-      endpoint: request.endpoint,
-      document: request.document,
-      operationName: request.operationName,
-      variables: request.variables,
-      connectionParams: connectionParams,
+      endpoint: runtimeRequest.endpoint,
+      document: runtimeRequest.document,
+      operationName: runtimeRequest.operationName,
+      variables: runtimeRequest.variables,
+      connectionParams: runtimeConnectionParams,
       ackTimeout: ackTimeout,
     );
     _connections[tabId] = connection;
@@ -158,12 +174,14 @@ class GraphqlSubscriptionService {
 class _GraphqlSubscriptionContext {
   const _GraphqlSubscriptionContext({
     required this.request,
+    required this.environmentId,
     required this.connectionParams,
     required this.ackTimeout,
     required this.reconnectPolicy,
   });
 
   final GraphqlRequest request;
+  final String? environmentId;
   final Map<String, Object?> connectionParams;
   final Duration ackTimeout;
   final GraphqlReconnectPolicy reconnectPolicy;
@@ -188,12 +206,14 @@ class GraphqlSubscriptionCubit
   Future<void> connect(
     String tabId,
     GraphqlRequest request, {
+    String? environmentId,
     Map<String, Object?> connectionParams = const <String, Object?>{},
     Duration ackTimeout = const Duration(seconds: 5),
     GraphqlReconnectPolicy reconnectPolicy = const GraphqlReconnectPolicy(),
   }) async {
     _contexts[tabId] = _GraphqlSubscriptionContext(
       request: request,
+      environmentId: environmentId,
       connectionParams: Map<String, Object?>.unmodifiable(connectionParams),
       ackTimeout: ackTimeout,
       reconnectPolicy: reconnectPolicy,
@@ -250,6 +270,7 @@ class GraphqlSubscriptionCubit
       final connection = await _service.connect(
         tabId: tabId,
         request: context.request,
+        environmentId: context.environmentId,
         connectionParams: context.connectionParams,
         ackTimeout: context.ackTimeout,
       );

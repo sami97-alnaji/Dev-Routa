@@ -133,6 +133,37 @@ void main() {
     },
   );
 
+  test(
+    'saved requests accept sort order zero on update and reject case variants',
+    () async {
+      final first = await repository.saveRequest(
+        workspaceId: 'workspace',
+        name: 'First',
+        sortOrder: 1,
+        request: const GraphqlRequest(endpoint: 'http://local', document: '{}'),
+      );
+      await repository.saveRequest(
+        id: first.id,
+        workspaceId: 'workspace',
+        name: 'First',
+        sortOrder: 0,
+        request: first.request,
+      );
+      expect((await repository.requestById(first.id))!.sortOrder, 0);
+      await expectLater(
+        repository.saveRequest(
+          workspaceId: 'workspace',
+          name: 'first',
+          request: const GraphqlRequest(
+            endpoint: 'http://local',
+            document: '{}',
+          ),
+        ),
+        throwsFormatException,
+      );
+    },
+  );
+
   test('GraphQL history is sanitized, searchable, and retained', () async {
     final response = GraphqlResponse(
       statusCode: 200,
@@ -166,6 +197,28 @@ void main() {
     );
     expect(await repository.history('workspace'), isEmpty);
   });
+
+  test(
+    'GraphQL transport failures and cancellations are retained safely',
+    () async {
+      await repository.recordFailure(
+        workspaceId: 'workspace',
+        type: GraphqlOperationType.query,
+        failure: const GraphqlFailure(
+          GraphqlFailureCategory.cancelled,
+          'Cancelled with secret=private-value',
+        ),
+        request: const GraphqlRequest(
+          endpoint: 'http://127.0.0.1/graphql',
+          document: 'query Users { users }',
+        ),
+      );
+      final entry = (await repository.history('workspace')).single;
+      expect(entry.completionName, 'cancelled');
+      expect(entry.summary['failureCategory'], 'cancelled');
+      expect(entry.summary.toString(), isNot(contains('private-value')));
+    },
+  );
 
   test(
     'schema snapshots suppress identical duplicates and can be deleted',

@@ -92,7 +92,7 @@ class _GraphqlResponsePanelState extends State<GraphqlResponsePanel> {
           children: [
             Expanded(
               child: Text(
-                'Response آ· ${execution.phase.name}',
+                'Response · ${execution.phase.name}',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
             ),

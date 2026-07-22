@@ -51,6 +51,15 @@ class GraphqlSubscriptionTransport {
     Map<String, Object?> connectionParams = const <String, Object?>{},
     Duration ackTimeout = const Duration(seconds: 5),
   }) async {
+    final uri = Uri.tryParse(endpoint);
+    if (uri == null ||
+        (uri.scheme != 'ws' && uri.scheme != 'wss') ||
+        uri.host.isEmpty) {
+      throw const GraphqlFailure(
+        GraphqlFailureCategory.validation,
+        'The GraphQL subscription endpoint must be a valid WS or WSS URL.',
+      );
+    }
     final socket = await _connector(
       endpoint,
       protocols: const <String>['graphql-transport-ws'],

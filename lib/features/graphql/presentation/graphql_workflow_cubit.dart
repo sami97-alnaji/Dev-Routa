@@ -17,6 +17,8 @@ class GraphqlWorkflowState {
     this.activeOperationIds = const <String>{},
     this.activeSubscriptionIds = const <String>{},
     this.executions = const <String, GraphqlTabExecution>{},
+    this.busySavedRequestIds = const <String>{},
+    this.savedRequestError,
   });
 
   final List<GraphqlDraft> tabs;
@@ -26,8 +28,11 @@ class GraphqlWorkflowState {
   final Set<String> activeOperationIds;
   final Set<String> activeSubscriptionIds;
   final Map<String, GraphqlTabExecution> executions;
+  final Set<String> busySavedRequestIds;
+  final String? savedRequestError;
   GraphqlDraft get active => tabs[activeIndex];
   bool get isDirty => active.isDirty;
+  bool get hasAnyDirty => tabs.any((tab) => tab.isDirty);
   bool get hasActiveWork =>
       activeOperationIds.contains(active.id) ||
       activeSubscriptionIds.contains(active.id);
@@ -42,6 +47,8 @@ class GraphqlWorkflowState {
     Set<String>? activeOperationIds,
     Set<String>? activeSubscriptionIds,
     Map<String, GraphqlTabExecution>? executions,
+    Set<String>? busySavedRequestIds,
+    String? savedRequestError,
   }) => GraphqlWorkflowState(
     tabs: tabs ?? this.tabs,
     savedRequests: savedRequests ?? this.savedRequests,
@@ -50,6 +57,8 @@ class GraphqlWorkflowState {
     activeOperationIds: activeOperationIds ?? this.activeOperationIds,
     activeSubscriptionIds: activeSubscriptionIds ?? this.activeSubscriptionIds,
     executions: executions ?? this.executions,
+    busySavedRequestIds: busySavedRequestIds ?? this.busySavedRequestIds,
+    savedRequestError: savedRequestError,
   );
 }
 
@@ -102,20 +111,30 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
 
   static GraphqlDraft _newDraft(String workspaceId, {GraphqlRequest? request}) {
     final now = DateTime.now();
+    final value = request ?? const GraphqlRequest(endpoint: '', document: '');
     return GraphqlDraft(
       id: _ids.v4(),
       workspaceId: workspaceId,
       title: 'Untitled GraphQL request',
-      request: request ?? const GraphqlRequest(endpoint: '', document: ''),
+      request: value,
       updatedAt: now,
+      isDirty: false,
+      baselineFingerprint: GraphqlDraft.fingerprint(value, null),
     );
   }
 
   Future<void> restoreDrafts() async {
+    final tabsAtStart = state.tabs;
     final drafts = await _repository.drafts(workspaceId);
     final saved = await _repository.requests(workspaceId);
     final history = await _repository.history(workspaceId);
     if (isClosed) return;
+    // AppShell starts restoration asynchronously. Do not let its stale result
+    // overwrite a tab the user has already edited or saved.
+    if (!identical(state.tabs, tabsAtStart)) {
+      emit(state.copyWith(savedRequests: saved, history: history));
+      return;
+    }
     if (drafts.isEmpty) {
       emit(state.copyWith(savedRequests: saved, history: history));
       return;
@@ -133,22 +152,43 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
     );
   }
 
-  void newDraft({GraphqlRequest? request, String? savedRequestId}) {
+  void newDraft({
+    GraphqlRequest? request,
+    String? savedRequestId,
+    String? title,
+  }) {
     final draft = _newDraft(workspaceId, request: request);
     final tab = GraphqlDraft(
       id: draft.id,
       workspaceId: draft.workspaceId,
-      title: draft.title,
+      title: title ?? draft.title,
       request: draft.request,
       updatedAt: draft.updatedAt,
       savedRequestId: savedRequestId,
       sortOrder: state.tabs.length,
+      isDirty: false,
+      baselineFingerprint: GraphqlDraft.fingerprint(draft.request, null),
     );
     _setTabs(<GraphqlDraft>[...state.tabs, tab], state.tabs.length);
   }
 
-  void openSavedRequest(GraphqlSavedRequest saved) =>
-      newDraft(request: saved.request, savedRequestId: saved.id);
+  void openSavedRequest(GraphqlSavedRequest saved) {
+    final existing = state.tabs.indexWhere(
+      (tab) => tab.savedRequestId == saved.id,
+    );
+    if (existing >= 0) {
+      selectTab(existing);
+      return;
+    }
+    newDraft(
+      request: saved.request,
+      savedRequestId: saved.id,
+      title: saved.name,
+    );
+  }
+
+  /// A saved request is always opened separately; replacing a dirty tab is a
+  /// silent data-loss path, so callers use [openSavedRequest] instead.
 
   void duplicateActive() {
     final source = state.active;
@@ -172,23 +212,19 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
   }
 
   Future<void> closeActive({required bool discardChanges}) async {
-    final current = state.active;
-    if (current.isDirty && !discardChanges) return;
-    await _repository.deleteDraft(current.id);
-    final tabs = List<GraphqlDraft>.of(state.tabs)..removeAt(state.activeIndex);
-    if (tabs.isEmpty) {
-      tabs.add(_newDraft(workspaceId));
-    }
-    _setTabs(tabs, state.activeIndex.clamp(0, tabs.length - 1));
+    await closeTab(state.active.id, discardChanges: discardChanges);
   }
 
   Future<void> closeOthers({required bool discardChanges}) async {
+    final active = state.active.id;
     if (!discardChanges &&
-        state.tabs.any((tab) => tab.id != state.active.id && tab.isDirty)) {
+        state.tabs.any((tab) => tab.id != active && tab.isDirty)) {
       return;
     }
-    for (final tab in state.tabs.where((item) => item.id != state.active.id)) {
+    for (final tab in state.tabs.where((item) => item.id != active)) {
+      _execution.cancel(tab.id);
       await _repository.deleteDraft(tab.id);
+      _removeTabRuntimeState(tab.id);
     }
     _setTabs(<GraphqlDraft>[state.active], 0);
   }
@@ -198,9 +234,31 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
       return;
     }
     for (final tab in state.tabs) {
+      _execution.cancel(tab.id);
       await _repository.deleteDraft(tab.id);
+      _removeTabRuntimeState(tab.id);
     }
     _setTabs(<GraphqlDraft>[_newDraft(workspaceId)], 0);
+  }
+
+  Future<void> closeTab(String tabId, {required bool discardChanges}) async {
+    final index = state.tabs.indexWhere((tab) => tab.id == tabId);
+    if (index < 0) return;
+    final tab = state.tabs[index];
+    if (tab.isDirty && !discardChanges) return;
+    _execution.cancel(tab.id);
+    await _repository.deleteDraft(tab.id);
+    _removeTabRuntimeState(tab.id);
+    final tabs = List<GraphqlDraft>.of(state.tabs)..removeAt(index);
+    final nextIndex = tabs.isEmpty
+        ? 0
+        : index < state.activeIndex
+        ? state.activeIndex - 1
+        : state.activeIndex;
+    if (tabs.isEmpty) {
+      tabs.add(_newDraft(workspaceId));
+    }
+    _setTabs(tabs, nextIndex.clamp(0, tabs.length - 1));
   }
 
   void renameActive(String title) => _replace(title: title.trim());
@@ -309,17 +367,69 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
     emit(state.copyWith(executions: executions));
   }
 
-  Future<GraphqlSavedRequest> saveActive({bool forceNew = false}) async {
-    final current = state.active;
+  Future<GraphqlSavedRequest> saveActive({bool forceNew = false}) =>
+      saveTab(state.active.id, forceNew: forceNew);
+
+  Future<GraphqlSavedRequest> saveTab(
+    String tabId, {
+    bool forceNew = false,
+    String? name,
+  }) async {
+    final index = state.tabs.indexWhere((tab) => tab.id == tabId);
+    if (index < 0) throw StateError('GraphQL tab $tabId was not found.');
+    final current = state.tabs[index];
     final saved = await _repository.saveRequest(
       id: forceNew ? null : current.savedRequestId,
       workspaceId: current.workspaceId,
-      name: current.title,
+      name: name ?? current.title,
       request: current.request,
     );
-    _replace(savedRequestId: saved.id, isDirty: false);
+    final clean = GraphqlDraft(
+      id: current.id,
+      workspaceId: current.workspaceId,
+      title: saved.name,
+      request: current.request,
+      updatedAt: DateTime.now(),
+      savedRequestId: saved.id,
+      environmentId: current.environmentId,
+      sortOrder: current.sortOrder,
+      isActive: current.isActive,
+      isDirty: false,
+      baselineFingerprint: GraphqlDraft.fingerprint(
+        current.request,
+        current.environmentId,
+      ),
+    );
+    final tabs = List<GraphqlDraft>.of(state.tabs)..[index] = clean;
+    _setTabs(tabs, state.activeIndex);
     await refreshSavedRequests();
     return saved;
+  }
+
+  Future<void> reorderSavedRequest(String id, int order) async {
+    await _runSavedRequestOperation(id, () async {
+      await _repository.reorderRequest(id, order);
+      await refreshSavedRequests();
+    });
+  }
+
+  Future<void> moveSavedRequest(
+    String id, {
+    String? collectionId,
+    String? folderId,
+    bool clearCollection = false,
+    bool clearFolder = false,
+  }) async {
+    await _runSavedRequestOperation(id, () async {
+      await _repository.moveRequest(
+        id,
+        collectionId: collectionId,
+        folderId: folderId,
+        clearCollection: clearCollection,
+        clearFolder: clearFolder,
+      );
+      await refreshSavedRequests();
+    });
   }
 
   Future<void> refreshSavedRequests([String query = '']) async {
@@ -366,18 +476,40 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
   }
 
   Future<void> deleteSavedRequest(String id) async {
-    await _repository.deleteRequest(id);
-    await refreshSavedRequests();
+    await _runSavedRequestOperation(id, () async {
+      await _repository.deleteRequest(id);
+      final tabs = state.tabs
+          .map(
+            (tab) => tab.savedRequestId == id
+                ? _copyTab(tab, clearSavedRequest: true, isDirty: true)
+                : tab,
+          )
+          .toList(growable: false);
+      _setTabs(tabs, state.activeIndex);
+      await refreshSavedRequests();
+    });
   }
 
   Future<void> duplicateSavedRequest(String id) async {
-    await _repository.duplicateRequest(id);
-    await refreshSavedRequests();
+    await _runSavedRequestOperation(id, () async {
+      await _repository.duplicateRequest(id);
+      await refreshSavedRequests();
+    });
   }
 
   Future<void> renameSavedRequest(String id, String name) async {
-    await _repository.renameRequest(id, name);
-    await refreshSavedRequests();
+    await _runSavedRequestOperation(id, () async {
+      final saved = await _repository.renameRequest(id, name);
+      final tabs = state.tabs
+          .map(
+            (tab) => tab.savedRequestId == id
+                ? _copyTab(tab, title: saved.name, isDirty: tab.isDirty)
+                : tab,
+          )
+          .toList(growable: false);
+      _setTabs(tabs, state.activeIndex);
+      await refreshSavedRequests();
+    });
   }
 
   void _replace({
@@ -396,27 +528,33 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
     bool? isDirty,
   }) {
     final old = state.active;
+    final request = GraphqlRequest(
+      endpoint: endpoint ?? old.request.endpoint,
+      document: document ?? old.request.document,
+      operationName: operationName ?? old.request.operationName,
+      variables: variables ?? old.request.variables,
+      headers: headers ?? old.request.headers,
+      extensions: extensions ?? old.request.extensions,
+      useGet: useGet ?? old.request.useGet,
+      auth: auth ?? old.request.auth,
+      settings: settings ?? old.request.settings,
+    );
+    final selectedEnvironment = environmentId ?? old.environmentId;
+    final fingerprint = GraphqlDraft.fingerprint(request, selectedEnvironment);
     final updated = GraphqlDraft(
       id: old.id,
       workspaceId: old.workspaceId,
       title: title ?? old.title,
       updatedAt: DateTime.now(),
       savedRequestId: savedRequestId ?? old.savedRequestId,
-      environmentId: environmentId ?? old.environmentId,
+      environmentId: selectedEnvironment,
       sortOrder: old.sortOrder,
       isActive: old.isActive,
-      isDirty: isDirty ?? true,
-      request: GraphqlRequest(
-        endpoint: endpoint ?? old.request.endpoint,
-        document: document ?? old.request.document,
-        operationName: operationName ?? old.request.operationName,
-        variables: variables ?? old.request.variables,
-        headers: headers ?? old.request.headers,
-        extensions: extensions ?? old.request.extensions,
-        useGet: useGet ?? old.request.useGet,
-        auth: auth ?? old.request.auth,
-        settings: settings ?? old.request.settings,
-      ),
+      isDirty: isDirty ?? fingerprint != old.baselineFingerprint,
+      baselineFingerprint: isDirty == false
+          ? fingerprint
+          : old.baselineFingerprint,
+      request: request,
     );
     final tabs = List<GraphqlDraft>.of(state.tabs)
       ..[state.activeIndex] = updated;
@@ -438,6 +576,48 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
     );
   }
 
+  void _removeTabRuntimeState(String tabId) {
+    final executions = Map<String, GraphqlTabExecution>.of(state.executions)
+      ..remove(tabId);
+    emit(
+      state.copyWith(
+        executions: executions,
+        activeOperationIds: Set<String>.of(state.activeOperationIds)
+          ..remove(tabId),
+        activeSubscriptionIds: Set<String>.of(state.activeSubscriptionIds)
+          ..remove(tabId),
+      ),
+    );
+  }
+
+  Future<void> _runSavedRequestOperation(
+    String id,
+    Future<void> Function() operation,
+  ) async {
+    if (state.busySavedRequestIds.contains(id)) return;
+    emit(
+      state.copyWith(
+        busySavedRequestIds: <String>{...state.busySavedRequestIds, id},
+      ),
+    );
+    try {
+      await operation();
+      if (!isClosed) emit(state.copyWith(savedRequestError: null));
+    } on Object catch (error) {
+      if (!isClosed) emit(state.copyWith(savedRequestError: error.toString()));
+      rethrow;
+    } finally {
+      if (!isClosed) {
+        emit(
+          state.copyWith(
+            busySavedRequestIds: Set<String>.of(state.busySavedRequestIds)
+              ..remove(id),
+          ),
+        );
+      }
+    }
+  }
+
   void _setTabs(List<GraphqlDraft> source, int activeIndex) {
     final tabs = <GraphqlDraft>[];
     for (var index = 0; index < source.length; index++) {
@@ -454,6 +634,7 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
           sortOrder: index,
           isActive: index == activeIndex,
           isDirty: item.isDirty,
+          baselineFingerprint: item.baselineFingerprint,
         ),
       );
     }
@@ -470,8 +651,31 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
           sortOrder: tab.sortOrder,
           isActive: tab.isActive,
           isDirty: tab.isDirty,
+          baselineFingerprint: tab.baselineFingerprint,
         ),
       );
     }
   }
+
+  GraphqlDraft _copyTab(
+    GraphqlDraft tab, {
+    String? title,
+    String? savedRequestId,
+    bool clearSavedRequest = false,
+    bool? isDirty,
+  }) => GraphqlDraft(
+    id: tab.id,
+    workspaceId: tab.workspaceId,
+    title: title ?? tab.title,
+    request: tab.request,
+    updatedAt: DateTime.now(),
+    savedRequestId: clearSavedRequest
+        ? null
+        : savedRequestId ?? tab.savedRequestId,
+    environmentId: tab.environmentId,
+    sortOrder: tab.sortOrder,
+    isActive: tab.isActive,
+    isDirty: isDirty ?? tab.isDirty,
+    baselineFingerprint: tab.baselineFingerprint,
+  );
 }

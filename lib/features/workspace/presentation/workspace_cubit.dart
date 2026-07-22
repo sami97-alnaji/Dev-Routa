@@ -256,6 +256,9 @@ class WorkspaceCubit extends Cubit<WorkspaceState> {
     await load();
   }
 
+  Future<List<FolderModel>> foldersForCollection(String collectionId) =>
+      _repository.folders(collectionId);
+
   Future<void> addEnvironment(String name, EnvironmentKind kind) async {
     final created = await _repository.createEnvironment(
       state.selectedWorkspaceId!,

@@ -21,6 +21,7 @@ class GraphqlDraft {
     this.sortOrder = 0,
     this.isActive = false,
     this.isDirty = true,
+    this.baselineFingerprint,
   });
   final String id;
   final String workspaceId;
@@ -32,6 +33,55 @@ class GraphqlDraft {
   final int sortOrder;
   final bool isActive;
   final bool isDirty;
+
+  /// Stable snapshot of all request fields that participate in dirty state.
+  final String? baselineFingerprint;
+
+  static String fingerprint(GraphqlRequest request, String? environmentId) =>
+      jsonEncode(
+        _canonical(<String, Object?>{
+          'endpoint': request.endpoint,
+          'document': request.document,
+          'operationName': request.operationName,
+          'variables': request.variables,
+          'headers': request.headers,
+          'extensions': request.extensions,
+          'useGet': request.useGet,
+          'environmentId': environmentId,
+          'auth': <String, Object?>{
+            'type': request.auth.type.name,
+            'username': request.auth.username,
+            'passwordSecretRef': request.auth.passwordSecretRef,
+            'tokenSecretRef': request.auth.tokenSecretRef,
+            'apiKeyName': request.auth.apiKeyName,
+            'apiKeySecretRef': request.auth.apiKeySecretRef,
+          },
+          'settings': <String, Object?>{
+            'connectTimeoutMs': request.settings.connectTimeoutMs,
+            'sendTimeoutMs': request.settings.sendTimeoutMs,
+            'receiveTimeoutMs': request.settings.receiveTimeoutMs,
+            'followRedirects': request.settings.followRedirects,
+            'maxRedirects': request.settings.maxRedirects,
+            'verifyCertificates': request.settings.verifyCertificates,
+          },
+        }),
+      );
+
+  static Object? _canonical(Object? value) {
+    if (value is Map) {
+      final entries =
+          value.entries
+              .map(
+                (entry) =>
+                    MapEntry(entry.key.toString(), _canonical(entry.value)),
+              )
+              .toList()
+            ..sort((a, b) => a.key.compareTo(b.key));
+      return Map<String, Object?>.fromEntries(entries);
+    }
+    if (value is Iterable) return value.map(_canonical).toList(growable: false);
+    return value;
+  }
 }
 
 class GraphqlSavedRequest {
@@ -187,6 +237,7 @@ class GraphqlRepository {
     int sortOrder = 0,
     bool isActive = false,
     bool isDirty = true,
+    String? baselineFingerprint,
   }) async {
     final draft = GraphqlDraft(
       id: id ?? _ids.v4(),
@@ -199,6 +250,9 @@ class GraphqlRepository {
       sortOrder: sortOrder,
       isActive: isActive,
       isDirty: isDirty,
+      baselineFingerprint:
+          baselineFingerprint ??
+          GraphqlDraft.fingerprint(request, environmentId),
     );
     await _database.customStatement(
       'INSERT OR REPLACE INTO graphql_drafts (id, workspace_id, title, endpoint, document, operation_name, variables_json, headers_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -350,6 +404,7 @@ class GraphqlRepository {
     'sortOrder': draft.sortOrder,
     'isActive': draft.isActive,
     'isDirty': draft.isDirty,
+    'baselineFingerprint': draft.baselineFingerprint,
   });
 
   GraphqlDraft _draftFromRow(QueryRow row) {
@@ -369,6 +424,7 @@ class GraphqlRepository {
       sortOrder: (payload['sortOrder'] as num?)?.toInt() ?? 0,
       isActive: payload['isActive'] == true,
       isDirty: payload['isDirty'] != false,
+      baselineFingerprint: payload['baselineFingerprint']?.toString(),
       request: GraphqlRequest(
         endpoint: row.read<String>('endpoint'),
         document: row.read<String>('document'),
@@ -391,21 +447,38 @@ class GraphqlRepository {
     String? folderId,
     int sortOrder = 0,
   }) async {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) {
+      throw const FormatException('A saved GraphQL request needs a name.');
+    }
     final now = DateTime.fromMillisecondsSinceEpoch(
       DateTime.now().millisecondsSinceEpoch ~/ 1000 * 1000,
     );
     final requestId = id ?? _ids.v4();
     final existing = id == null ? null : await requestById(id);
+    final targetCollectionId = collectionId ?? existing?.collectionId;
+    final targetFolderId = folderId ?? existing?.folderId;
+    await _ensureNameAvailable(
+      workspaceId: workspaceId,
+      name: trimmedName,
+      collectionId: targetCollectionId,
+      folderId: targetFolderId,
+      excludingId: id,
+    );
     await _database.customStatement(
       'INSERT OR REPLACE INTO graphql_saved_requests (id, workspace_id, collection_id, folder_id, name, payload_json, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       <Object?>[
         requestId,
         workspaceId,
-        collectionId,
-        folderId,
-        name,
+        targetCollectionId,
+        targetFolderId,
+        trimmedName,
         _requestJson(request),
-        sortOrder,
+        existing == null
+            ? sortOrder
+            : sortOrder == 0
+            ? existing.sortOrder
+            : sortOrder,
         (existing?.createdAt ?? now).millisecondsSinceEpoch ~/ 1000,
         now.millisecondsSinceEpoch ~/ 1000,
       ],
@@ -413,11 +486,15 @@ class GraphqlRepository {
     return GraphqlSavedRequest(
       id: requestId,
       workspaceId: workspaceId,
-      name: name,
+      name: trimmedName,
       request: request,
-      collectionId: collectionId,
-      folderId: folderId,
-      sortOrder: sortOrder,
+      collectionId: targetCollectionId,
+      folderId: targetFolderId,
+      sortOrder: existing == null
+          ? sortOrder
+          : sortOrder == 0
+          ? existing.sortOrder
+          : sortOrder,
       createdAt: now,
       updatedAt: now,
     );
@@ -448,6 +525,17 @@ class GraphqlRepository {
     if (trimmed.isEmpty) {
       throw const FormatException('A saved GraphQL request needs a name.');
     }
+    final existing = await requestById(id);
+    if (existing == null) {
+      throw StateError('Saved GraphQL request $id was not found.');
+    }
+    await _ensureNameAvailable(
+      workspaceId: existing.workspaceId,
+      name: trimmed,
+      collectionId: existing.collectionId,
+      folderId: existing.folderId,
+      excludingId: id,
+    );
     await _database.customStatement(
       'UPDATE graphql_saved_requests SET name = ?, updated_at = ? WHERE id = ?',
       <Object?>[trimmed, DateTime.now().millisecondsSinceEpoch ~/ 1000, id],
@@ -467,11 +555,10 @@ class GraphqlRepository {
     if (original == null) {
       throw StateError('Saved GraphQL request $id was not found.');
     }
+    final copyName = await _nextCopyName(original);
     return saveRequest(
       workspaceId: original.workspaceId,
-      name: name?.trim().isNotEmpty == true
-          ? name!.trim()
-          : '${original.name} copy',
+      name: name?.trim().isNotEmpty == true ? name!.trim() : copyName,
       request: original.request,
       collectionId: original.collectionId,
       folderId: original.folderId,
@@ -522,6 +609,26 @@ class GraphqlRepository {
     });
   }
 
+  /// Reorders only siblings in the request's own collection/folder location.
+  Future<void> reorderRequest(String id, int destinationIndex) async {
+    final source = await requestById(id);
+    if (source == null) {
+      throw StateError('Saved GraphQL request $id was not found.');
+    }
+    final siblings = (await requests(source.workspaceId))
+        .where(
+          (item) =>
+              item.collectionId == source.collectionId &&
+              item.folderId == source.folderId,
+        )
+        .toList();
+    final current = siblings.indexWhere((item) => item.id == id);
+    if (current < 0) return;
+    final item = siblings.removeAt(current);
+    siblings.insert(destinationIndex.clamp(0, siblings.length), item);
+    await _writeSequentialOrder(siblings);
+  }
+
   Future<void> deleteRequest(String id) => _database.customStatement(
     'DELETE FROM graphql_saved_requests WHERE id = ?',
     <Object?>[id],
@@ -532,16 +639,104 @@ class GraphqlRepository {
     String? collectionId,
     String? folderId,
     int? sortOrder,
-  }) => _database.customStatement(
-    'UPDATE graphql_saved_requests SET collection_id = ?, folder_id = ?, sort_order = ?, updated_at = ? WHERE id = ?',
-    <Object?>[
-      collectionId,
-      folderId,
-      sortOrder ?? 0,
-      DateTime.now().millisecondsSinceEpoch ~/ 1000,
-      id,
-    ],
-  );
+    bool clearCollection = false,
+    bool clearFolder = false,
+  }) async {
+    final source = await requestById(id);
+    if (source == null) {
+      throw StateError('Saved GraphQL request $id was not found.');
+    }
+    final targetCollectionId = clearCollection
+        ? null
+        : collectionId ?? source.collectionId;
+    final targetFolderId = clearFolder || clearCollection
+        ? null
+        : folderId ?? source.folderId;
+    await _database.transaction(() async {
+      final targetSiblings = (await requests(source.workspaceId))
+          .where(
+            (item) =>
+                item.id != id &&
+                item.collectionId == targetCollectionId &&
+                item.folderId == targetFolderId,
+          )
+          .toList();
+      await _database.customStatement(
+        'UPDATE graphql_saved_requests SET collection_id = ?, folder_id = ?, sort_order = ?, updated_at = ? WHERE id = ?',
+        <Object?>[
+          targetCollectionId,
+          targetFolderId,
+          targetSiblings.length,
+          DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          id,
+        ],
+      );
+      final sourceSiblings = (await requests(source.workspaceId))
+          .where(
+            (item) =>
+                item.id != id &&
+                item.collectionId == source.collectionId &&
+                item.folderId == source.folderId,
+          )
+          .toList();
+      await _writeSequentialOrder(sourceSiblings);
+    });
+  }
+
+  Future<void> _writeSequentialOrder(List<GraphqlSavedRequest> items) async {
+    await _database.transaction(() async {
+      for (var index = 0; index < items.length; index++) {
+        await _database.customStatement(
+          'UPDATE graphql_saved_requests SET sort_order = ?, updated_at = ? WHERE id = ?',
+          <Object?>[
+            index,
+            DateTime.now().millisecondsSinceEpoch ~/ 1000,
+            items[index].id,
+          ],
+        );
+      }
+    });
+  }
+
+  Future<void> _ensureNameAvailable({
+    required String workspaceId,
+    required String name,
+    required String? collectionId,
+    required String? folderId,
+    String? excludingId,
+  }) async {
+    final conflict = (await requests(workspaceId)).any(
+      (item) =>
+          item.id != excludingId &&
+          item.name == name &&
+          item.collectionId == collectionId &&
+          item.folderId == folderId,
+    );
+    if (conflict) {
+      throw FormatException(
+        'A saved GraphQL request named "$name" already exists in this location.',
+      );
+    }
+  }
+
+  Future<String> _nextCopyName(GraphqlSavedRequest original) async {
+    final existing = await requests(original.workspaceId);
+    final names = existing
+        .where(
+          (item) =>
+              item.collectionId == original.collectionId &&
+              item.folderId == original.folderId,
+        )
+        .map((item) => item.name.toLowerCase())
+        .toSet();
+    var candidate = '${original.name} copy';
+    var number = 2;
+    while (names.contains(candidate.toLowerCase())) {
+      candidate = '${original.name} copy $number';
+      number++;
+    }
+    return candidate;
+  }
 
   GraphqlSavedRequest _savedFromRow(QueryRow row) {
     final payload = jsonDecode(row.read<String>('payload_json')) as Map;

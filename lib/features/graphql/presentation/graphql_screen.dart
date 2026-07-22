@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import 'graphql_response_panel.dart';
 import 'graphql_schema_panel.dart';
 import 'graphql_subscription_panel.dart';
 import 'graphql_workflow_cubit.dart';
+import '../../workspace/presentation/workspace_cubit.dart';
 
 /// Presentation-only GraphQL editor. Execution and cancellation belong to the
 /// workflow/application layers so every tab remains isolated.
@@ -104,12 +106,280 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
     );
   }
 
+  Future<bool> _confirm(
+    BuildContext context, {
+    required String title,
+    required String message,
+    String cancelLabel = 'Cancel',
+    String confirmLabel = 'Continue',
+  }) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(cancelLabel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(confirmLabel),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+
+  Future<String?> _askName(
+    BuildContext context, {
+    required String title,
+    String initial = '',
+    String confirmLabel = 'Save',
+  }) async {
+    final controller = TextEditingController(text: initial);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            onChanged: (_) => setDialogState(() {}),
+            onSubmitted: (value) {
+              if (value.trim().isNotEmpty) Navigator.pop(context, value);
+            },
+            decoration: const InputDecoration(
+              labelText: 'Name',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: controller.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(dialogContext, controller.text),
+              child: Text(confirmLabel),
+            ),
+          ],
+        ),
+      ),
+    );
+    unawaited(
+      Future<void>.delayed(
+        const Duration(milliseconds: 300),
+        controller.dispose,
+      ),
+    );
+    return result;
+  }
+
+  Future<void> _closeTab(
+    BuildContext context,
+    GraphqlWorkflowCubit cubit,
+    GraphqlDraft tab,
+  ) async {
+    final subscriptionCubit = context.read<GraphqlSubscriptionCubit>();
+    if (tab.isDirty) {
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Unsaved GraphQL changes'),
+          content: Text('Save changes to "${tab.title}" before closing?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'cancel'),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'discard'),
+              child: const Text('Discard'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, 'save'),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      );
+      if (choice == null || choice == 'cancel') return;
+      if (choice == 'save') {
+        if (!context.mounted) return;
+        final saved = await _saveTab(context, cubit, tab);
+        if (!saved || !context.mounted) return;
+      }
+    }
+    if (subscriptionCubit.state[tab.id]?.isActive == true) {
+      subscriptionCubit.stop(tab.id);
+    }
+    await cubit.closeTab(tab.id, discardChanges: true);
+  }
+
+  Future<bool> _saveTab(
+    BuildContext context,
+    GraphqlWorkflowCubit cubit,
+    GraphqlDraft tab,
+  ) async {
+    if (tab.savedRequestId == null) {
+      final name = await _askName(
+        context,
+        title: 'Save GraphQL request',
+        initial: tab.title == 'Untitled GraphQL request' ? '' : tab.title,
+      );
+      if (name == null || name.trim().isEmpty) return false;
+      try {
+        await cubit.saveTab(tab.id, name: name.trim());
+        return true;
+      } on Object catch (error) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not save GraphQL request: $error')),
+          );
+        }
+        return false;
+      }
+    }
+    try {
+      await cubit.saveTab(tab.id);
+      return true;
+    } on Object catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save GraphQL request: $error')),
+        );
+      }
+      return false;
+    }
+  }
+
+  Future<void> _renameSavedRequest(
+    BuildContext context,
+    GraphqlWorkflowCubit cubit,
+    GraphqlSavedRequest request,
+  ) async {
+    final name = await _askName(
+      context,
+      title: 'Rename saved request',
+      initial: request.name,
+    );
+    if (name == null) return;
+    try {
+      await cubit.renameSavedRequest(request.id, name);
+    } on Object catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not rename request: $error')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteSavedRequest(
+    BuildContext context,
+    GraphqlWorkflowCubit cubit,
+    GraphqlSavedRequest request,
+  ) async {
+    final hasDirtyLinkedTab = cubit.state.tabs.any(
+      (tab) => tab.savedRequestId == request.id && tab.isDirty,
+    );
+    final delete = await _confirm(
+      context,
+      title: hasDirtyLinkedTab
+          ? 'Delete saved request and keep draft?'
+          : 'Delete saved request?',
+      message: hasDirtyLinkedTab
+          ? 'Unsaved edits will remain in an independent draft. The tab will not close.'
+          : 'Deleting "${request.name}" removes the saved request from the workspace. Open tabs keep their current draft state.',
+      confirmLabel: hasDirtyLinkedTab ? 'Delete and keep draft' : 'Delete',
+    );
+    if (!delete) return;
+    await cubit.deleteSavedRequest(request.id);
+  }
+
+  Future<void> _moveSavedRequest(
+    BuildContext context,
+    GraphqlWorkflowCubit cubit,
+    WorkspaceState workspace,
+    GraphqlSavedRequest request,
+  ) async {
+    const root = '__workspace_root__';
+    final collectionId = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Move saved request'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, root),
+            child: const Text('Workspace root (unfiled)'),
+          ),
+          for (final collection in workspace.collections)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, collection.id),
+              child: Text(collection.name),
+            ),
+        ],
+      ),
+    );
+    if (collectionId == null) return;
+    if (!context.mounted) return;
+
+    String? folderId;
+    if (collectionId != root) {
+      final folders = await context.read<WorkspaceCubit>().foldersForCollection(
+        collectionId,
+      );
+      if (!context.mounted) return;
+      folderId = await showDialog<String?>(
+        context: context,
+        builder: (dialogContext) => SimpleDialog(
+          title: const Text('Choose folder'),
+          children: [
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Collection root'),
+            ),
+            for (final folder in folders)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(dialogContext, folder.id),
+                child: Text(folder.name),
+              ),
+          ],
+        ),
+      );
+    }
+    if (!context.mounted) return;
+
+    try {
+      await cubit.moveSavedRequest(
+        request.id,
+        collectionId: collectionId == root ? null : collectionId,
+        folderId: folderId,
+        clearCollection: collectionId == root,
+        clearFolder: folderId == null,
+      );
+    } on Object catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not move request: $error')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(
     BuildContext context,
   ) => BlocBuilder<GraphqlWorkflowCubit, GraphqlWorkflowState>(
     builder: (context, state) {
       final cubit = context.read<GraphqlWorkflowCubit>();
+      final workspace = context.watch<WorkspaceCubit>().state;
       final draft = state.active;
       final execution = state.executionFor(draft.id);
       _sync(
@@ -142,11 +412,12 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
               for (var i = 0; i < state.tabs.length; i++)
                 InputChip(
                   label: Text(
-                    '${state.tabs[i].isDirty ? '• ' : ''}${state.tabs[i].title}',
+                    '${state.tabs[i].isDirty ? '* ' : ''}${state.tabs[i].title}',
                   ),
                   selected: i == state.activeIndex,
                   onPressed: () => cubit.selectTab(i),
-                  onDeleted: () => cubit.closeActive(discardChanges: true),
+                  deleteButtonTooltipMessage: 'Close GraphQL tab',
+                  onDeleted: () => _closeTab(context, cubit, state.tabs[i]),
                 ),
               ActionChip(label: const Text('+'), onPressed: cubit.newDraft),
             ],
@@ -299,7 +570,8 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
               ),
             ),
           const SizedBox(height: 12),
-          Expanded(
+          SizedBox(
+            height: 260,
             child: TextField(
               controller: _document,
               maxLines: null,
@@ -333,7 +605,9 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               FilledButton.icon(
                 onPressed:
@@ -351,7 +625,6 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
                       : 'Execute',
                 ),
               ),
-              const SizedBox(width: 8),
               OutlinedButton.icon(
                 onPressed: execution.isActive
                     ? () => cubit.cancelTab(draft.id)
@@ -359,15 +632,13 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
                 icon: const Icon(Icons.stop),
                 label: const Text('Cancel'),
               ),
-              const SizedBox(width: 8),
               OutlinedButton.icon(
-                onPressed: () => cubit.saveActive(),
+                onPressed: () => _saveTab(context, cubit, draft),
                 icon: const Icon(Icons.save_outlined),
                 label: Text(
                   draft.savedRequestId == null ? 'Save as new' : 'Save',
                 ),
               ),
-              const SizedBox(width: 8),
               OutlinedButton.icon(
                 key: const Key('open-graphql-schema-explorer'),
                 onPressed: () =>
@@ -398,11 +669,17 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
           : GraphqlResponsePanel(execution: execution);
       final saved = _SavedRequestPanel(
         requests: state.savedRequests,
+        workspace: workspace,
         search: _search,
         onSearch: cubit.refreshSavedRequests,
         onOpen: cubit.openSavedRequest,
+        onRename: (request) => _renameSavedRequest(context, cubit, request),
+        onMove: (request) =>
+            _moveSavedRequest(context, cubit, workspace, request),
+        onReorder: cubit.reorderSavedRequest,
         onDuplicate: cubit.duplicateSavedRequest,
-        onDelete: cubit.deleteSavedRequest,
+        onDelete: (request) => _deleteSavedRequest(context, cubit, request),
+        busyIds: state.busySavedRequestIds,
       );
       final history = _HistoryPanel(
         entries: state.history,
@@ -411,15 +688,15 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
         onDelete: (entry) => cubit.deleteHistory(entry.id),
       );
       return MediaQuery.sizeOf(context).width < 900
-          ? Column(
+          ? ListView(
               children: [
-                Expanded(flex: 3, child: editor),
+                editor,
                 const Divider(),
-                Expanded(child: response),
+                SizedBox(height: 320, child: response),
                 const Divider(),
-                SizedBox(height: 180, child: saved),
+                SizedBox(height: 260, child: saved),
                 const Divider(),
-                SizedBox(height: 180, child: history),
+                SizedBox(height: 260, child: history),
               ],
             )
           : Row(
@@ -435,7 +712,7 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
                   ),
                 ),
                 const VerticalDivider(),
-                Expanded(child: editor),
+                Expanded(child: SingleChildScrollView(child: editor)),
                 const VerticalDivider(),
                 Expanded(child: response),
               ],
@@ -446,71 +723,175 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
 
 class _SavedRequestPanel extends StatelessWidget {
   const _SavedRequestPanel({
+    required this.workspace,
     required this.requests,
     required this.search,
     required this.onSearch,
     required this.onOpen,
+    required this.onRename,
+    required this.onMove,
+    required this.onReorder,
     required this.onDuplicate,
     required this.onDelete,
+    required this.busyIds,
   });
+
+  final WorkspaceState workspace;
   final List<GraphqlSavedRequest> requests;
   final TextEditingController search;
   final ValueChanged<String> onSearch;
   final ValueChanged<GraphqlSavedRequest> onOpen;
-  final ValueChanged<String> onDuplicate;
-  final ValueChanged<String> onDelete;
+  final Future<void> Function(GraphqlSavedRequest) onRename;
+  final Future<void> Function(GraphqlSavedRequest) onMove;
+  final Future<void> Function(String id, int order) onReorder;
+  final Future<void> Function(String id) onDuplicate;
+  final Future<void> Function(GraphqlSavedRequest) onDelete;
+  final Set<String> busyIds;
+
+  String _collectionLabel(GraphqlSavedRequest request) {
+    if (request.collectionId == null) return 'Workspace root';
+    for (final collection in workspace.collections) {
+      if (collection.id == request.collectionId) return collection.name;
+    }
+    return 'Collection ${request.collectionId}';
+  }
+
+  String _folderLabel(GraphqlSavedRequest request) {
+    if (request.folderId == null) return 'Root folder';
+    for (final folder in workspace.folders) {
+      if (folder.id == request.folderId) return folder.name;
+    }
+    return 'Folder ${request.folderId}';
+  }
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text('Saved requests', style: Theme.of(context).textTheme.titleMedium),
-      const SizedBox(height: 8),
-      TextField(
-        controller: search,
-        onChanged: onSearch,
-        decoration: const InputDecoration(
-          isDense: true,
-          prefixIcon: Icon(Icons.search),
-          hintText: 'Search',
-          border: OutlineInputBorder(),
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Saved requests', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        TextField(
+          controller: search,
+          onChanged: onSearch,
+          decoration: const InputDecoration(
+            isDense: true,
+            prefixIcon: Icon(Icons.search),
+            hintText: 'Search',
+            border: OutlineInputBorder(),
+          ),
         ),
-      ),
-      const SizedBox(height: 6),
-      Expanded(
-        child: ListView(
-          children: [
-            for (final request in requests)
-              ListTile(
-                dense: true,
-                title: Text(request.name),
-                subtitle: Text(
-                  request.request.endpoint,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+        const SizedBox(height: 6),
+        Expanded(
+          child: ListView(
+            children: [
+              for (final request in requests)
+                ListTile(
+                  dense: true,
+                  title: Text(request.name),
+                  subtitle: Text(
+                    '${request.request.endpoint}\n${_collectionLabel(request)} - ${_folderLabel(request)}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  onTap: () => onOpen(request),
+                  trailing: PopupMenuButton<String>(
+                    tooltip: 'Saved request actions',
+                    enabled: !busyIds.contains(request.id),
+                    onSelected: (action) =>
+                        unawaited(_runAction(context, request, action)),
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(value: 'open', child: Text('Open')),
+                      const PopupMenuItem(
+                        value: 'rename',
+                        child: Text('Rename'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'duplicate',
+                        child: Text('Duplicate'),
+                      ),
+                      const PopupMenuItem(value: 'move', child: Text('Move')),
+                      PopupMenuItem(
+                        value: 'up',
+                        enabled: _locationIndex(request) > 0,
+                        child: const Text('Move up'),
+                      ),
+                      PopupMenuItem(
+                        value: 'down',
+                        enabled:
+                            _locationIndex(request) <
+                            _locationCount(request) - 1,
+                        child: const Text('Move down'),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Delete'),
+                      ),
+                    ],
+                  ),
                 ),
-                onTap: () => onOpen(request),
-                trailing: PopupMenuButton<String>(
-                  onSelected: (action) {
-                    if (action == 'open') onOpen(request);
-                    if (action == 'copy') onDuplicate(request.id);
-                    if (action == 'delete') onDelete(request.id);
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(
-                      value: 'open',
-                      child: Text('Open in new tab'),
-                    ),
-                    PopupMenuItem(value: 'copy', child: Text('Duplicate')),
-                    PopupMenuItem(value: 'delete', child: Text('Delete')),
-                  ],
-                ),
-              ),
-          ],
+            ],
+          ),
         ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
+
+  int _locationIndex(GraphqlSavedRequest request) => requests
+      .where(
+        (item) =>
+            item.collectionId == request.collectionId &&
+            item.folderId == request.folderId,
+      )
+      .toList()
+      .indexWhere((item) => item.id == request.id);
+
+  int _locationCount(GraphqlSavedRequest request) => requests
+      .where(
+        (item) =>
+            item.collectionId == request.collectionId &&
+            item.folderId == request.folderId,
+      )
+      .length;
+
+  Future<void> _runAction(
+    BuildContext context,
+    GraphqlSavedRequest request,
+    String action,
+  ) async {
+    try {
+      switch (action) {
+        case 'open':
+          onOpen(request);
+          return;
+        case 'rename':
+          await onRename(request);
+          return;
+        case 'duplicate':
+          await onDuplicate(request.id);
+          return;
+        case 'move':
+          await onMove(request);
+          return;
+        case 'up':
+          await onReorder(request.id, _locationIndex(request) - 1);
+          return;
+        case 'down':
+          await onReorder(request.id, _locationIndex(request) + 1);
+          return;
+        case 'delete':
+          await onDelete(request);
+          return;
+      }
+    } on Object catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Saved request operation failed: $error')),
+        );
+      }
+    }
+  }
 }
 
 class _HistoryPanel extends StatefulWidget {
@@ -632,7 +1013,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
                 ),
                 title: Text(entry.operationType.name),
                 subtitle: Text(
-                  '${entry.summary['statusCode'] ?? '-'} آ· ${entry.createdAt.toLocal()}',
+                  '${entry.summary['statusCode'] ?? '-'} - ${entry.createdAt.toLocal()}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),

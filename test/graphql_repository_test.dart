@@ -97,6 +97,42 @@ void main() {
     },
   );
 
+  test(
+    'saved request names are scoped and duplicate copies do not collide',
+    () async {
+      final first = await repository.saveRequest(
+        workspaceId: 'workspace',
+        name: 'Users',
+        collectionId: 'collection-a',
+        request: const GraphqlRequest(endpoint: 'http://local', document: '{}'),
+      );
+      await expectLater(
+        repository.saveRequest(
+          workspaceId: 'workspace',
+          name: ' Users ',
+          collectionId: 'collection-a',
+          request: const GraphqlRequest(
+            endpoint: 'http://local',
+            document: '{}',
+          ),
+        ),
+        throwsFormatException,
+      );
+      final copy = await repository.duplicateRequest(first.id);
+      final secondCopy = await repository.duplicateRequest(first.id);
+      expect(copy.name, 'Users copy');
+      expect(secondCopy.name, 'Users copy 2');
+      await repository.moveRequest(
+        first.id,
+        clearCollection: true,
+        clearFolder: true,
+      );
+      final moved = await repository.requestById(first.id);
+      expect(moved!.collectionId, isNull);
+      expect(moved.folderId, isNull);
+    },
+  );
+
   test('GraphQL history is sanitized, searchable, and retained', () async {
     final response = GraphqlResponse(
       statusCode: 200,

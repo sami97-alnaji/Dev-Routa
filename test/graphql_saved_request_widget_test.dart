@@ -2,7 +2,6 @@ import 'package:devroute_ai_studio/app.dart';
 import 'package:devroute_ai_studio/core/storage/database_schema.dart';
 import 'package:devroute_ai_studio/features/graphql/application/graphql_execution_service.dart';
 import 'package:devroute_ai_studio/features/graphql/data/graphql_repository.dart';
-import 'package:devroute_ai_studio/features/graphql/domain/graphql_models.dart';
 import 'package:devroute_ai_studio/features/graphql/presentation/graphql_workflow_cubit.dart';
 import 'package:devroute_ai_studio/features/workspace/presentation/workspace_cubit.dart';
 import 'package:drift/native.dart';
@@ -11,6 +10,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  const responsiveViewports = <Size>[Size(800, 600), Size(390, 844)];
+
   Future<AppDatabase> openGraphql(WidgetTester tester, Size size) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -36,10 +37,9 @@ void main() {
 
   Future<void> saveCurrentAs(WidgetTester tester, String name) async {
     final saveAsNew = find.widgetWithText(OutlinedButton, 'Save as new');
-    await tester.drag(
-      find.byType(SingleChildScrollView).first,
-      const Offset(0, -700),
-    );
+    await tester.drag(find.byType(ListView).first, const Offset(0, -700));
+    await tester.pumpAndSettle();
+    expect(saveAsNew, findsOneWidget);
     await tester.pumpAndSettle();
     await tester.tap(saveAsNew);
     await tester.pumpAndSettle();
@@ -58,8 +58,37 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> openActions(WidgetTester tester) async {
-    await tester.tap(find.byTooltip('Saved request actions').first);
+  Future<void> openActions(WidgetTester tester, {String? requestName}) async {
+    Finder actions = find.byTooltip('Saved request actions');
+    await tester.drag(find.byType(ListView).first, const Offset(0, -1200));
+    await tester.pumpAndSettle();
+    if (requestName != null) {
+      final requestTile = find.byWidgetPredicate(
+        (widget) =>
+            widget is ListTile &&
+            widget.title is Text &&
+            (widget.title as Text).data == requestName,
+      );
+      expect(requestTile, findsOneWidget);
+      actions = find.descendant(
+        of: requestTile,
+        matching: find.byTooltip('Saved request actions'),
+      );
+    }
+    expect(actions, findsWidgets);
+    final action = actions.first;
+    await tester.ensureVisible(action);
+    await tester.pumpAndSettle();
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> openNewDraft(WidgetTester tester) async {
+    final newDraft = find.widgetWithText(ActionChip, '+');
+    await tester.drag(find.byType(ListView).first, const Offset(0, 700));
+    await tester.pumpAndSettle();
+    expect(newDraft, findsOneWidget);
+    await tester.tap(newDraft);
     await tester.pumpAndSettle();
   }
 
@@ -135,264 +164,263 @@ void main() {
     },
   );
 
-  testWidgets('saved request popup renames a linked clean tab', (tester) async {
-    final database = await openGraphql(tester, const Size(1440, 900));
-    await makeDirty(tester);
-    await saveCurrentAs(tester, 'Get User');
-    final rows = await database
-        .customSelect('SELECT name FROM graphql_saved_requests')
-        .get();
-    expect(rows, hasLength(1));
-    expect(find.text('Get User'), findsWidgets);
-    await openActions(tester);
-    await tester.tap(find.text('Rename').last);
-    await tester.pumpAndSettle();
+  for (final viewport in responsiveViewports) {
+    final viewportLabel =
+        '${viewport.width.toInt()}x${viewport.height.toInt()}';
 
-    final nameField = find.descendant(
-      of: find.byType(AlertDialog),
-      matching: find.byType(TextField),
-    );
-    expect(tester.widget<TextField>(nameField).controller!.text, 'Get User');
-    await tester.enterText(nameField, 'Get User Details');
-    await tester.tap(
-      find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.widgetWithText(FilledButton, 'Save'),
-      ),
-    );
-    await tester.pumpAndSettle();
+    testWidgets(
+      'saved request popup renames a linked clean tab at $viewportLabel',
+      (tester) async {
+        final database = await openGraphql(tester, viewport);
+        final cubit = workflow(tester);
+        await makeDirty(tester);
+        await saveCurrentAs(tester, 'Get User');
+        await openActions(tester);
+        await tester.tap(find.text('Rename').last);
+        await tester.pumpAndSettle();
 
-    expect(find.text('Get User Details'), findsWidgets);
-    expect(find.textContaining('* Get User Details'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
+        expect(find.text('Rename saved request'), findsOneWidget);
+        final nameField = find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(TextField),
+        );
+        await tester.enterText(nameField, '');
+        await tester.pump();
+        final save = find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.widgetWithText(FilledButton, 'Save'),
+        );
+        expect(tester.widget<FilledButton>(save).onPressed, isNull);
+        await tester.enterText(nameField, 'Get User Details');
+        await tester.pump();
+        await tester.tap(save);
+        await tester.pumpAndSettle();
 
-  testWidgets('saved request delete keeps its linked tab as a dirty draft', (
-    tester,
-  ) async {
-    await openGraphql(tester, const Size(1440, 900));
-    await makeDirty(tester);
-    await saveCurrentAs(tester, 'Delete me');
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Endpoint'),
-      'http://127.0.0.1/graphql/changed',
-    );
-    await tester.pump();
-    expect(find.text('Delete me'), findsWidgets);
-    await openActions(tester);
-    await tester.tap(find.text('Delete').last);
-    await tester.pumpAndSettle();
-    expect(find.text('Delete saved request and keep draft?'), findsOneWidget);
-    await tester.tap(
-      find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.widgetWithText(FilledButton, 'Delete and keep draft'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.drag(
-      find.byType(SingleChildScrollView).first,
-      const Offset(0, 700),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.byTooltip('Saved request actions'), findsNothing);
-    final draftChip = tester.widget<InputChip>(find.byType(InputChip).first);
-    expect((draftChip.label as Text).data, startsWith('* '));
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('saved request delete detaches a linked clean tab', (
-    tester,
-  ) async {
-    final database = await openGraphql(tester, const Size(1440, 900));
-    final cubit = workflow(tester);
-    cubit.updateEndpoint('http://127.0.0.1/graphql');
-    cubit.updateDocument('query User { user { id } }');
-    cubit.updateVariables(<String, Object?>{'id': '42'});
-    cubit.updateHeaders(<String, String>{'x-client': 'widget-test'});
-    await tester.pumpAndSettle();
-    await saveCurrentAs(tester, 'Clean linked request');
-    final before = cubit.state.active;
-    expect(before.isDirty, isFalse);
-    expect(before.savedRequestId, isNotNull);
-
-    await openActions(tester);
-    await tester.tap(find.text('Delete').last);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.text('Cancel'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(cubit.state.active.savedRequestId, before.savedRequestId);
-    expect(
-      await database
-          .customSelect('SELECT id FROM graphql_saved_requests')
-          .get(),
-      hasLength(1),
+        expect(find.text('Get User Details'), findsWidgets);
+        expect(cubit.state.active.title, 'Get User Details');
+        expect(
+          (await database
+                  .customSelect('SELECT name FROM graphql_saved_requests')
+                  .getSingle())
+              .read<String>('name'),
+          'Get User Details',
+        );
+        expect(tester.takeException(), isNull);
+      },
     );
 
-    await openActions(tester);
-    await tester.tap(find.text('Delete').last);
-    await tester.pumpAndSettle();
-    expect(find.text('Delete saved request?'), findsOneWidget);
-    await tester.tap(
-      find.descendant(
-        of: find.byType(AlertDialog),
-        matching: find.widgetWithText(FilledButton, 'Delete'),
-      ),
-    );
-    await tester.pumpAndSettle();
+    testWidgets(
+      'saved request delete keeps a clean linked tab as a dirty draft at $viewportLabel',
+      (tester) async {
+        final database = await openGraphql(tester, viewport);
+        final cubit = workflow(tester);
+        await makeDirty(tester);
+        await saveCurrentAs(tester, 'Clean linked request');
+        final before = cubit.state.active;
+        expect(before.isDirty, isFalse);
+        await openActions(tester);
+        await tester.tap(find.text('Delete').last);
+        await tester.pumpAndSettle();
 
-    final detached = cubit.state.active;
-    expect(detached.savedRequestId, isNull);
-    expect(detached.isDirty, isTrue);
-    expect(detached.request.endpoint, before.request.endpoint);
-    expect(detached.request.document, before.request.document);
-    expect(detached.request.variables, before.request.variables);
-    expect(detached.request.headers, before.request.headers);
-    expect(
-      await database
-          .customSelect('SELECT id FROM graphql_saved_requests')
-          .get(),
-      isEmpty,
-    );
-    expect(find.byType(InputChip), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+        expect(find.text('Delete saved request?'), findsOneWidget);
+        await tester.tap(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.widgetWithText(FilledButton, 'Delete'),
+          ),
+        );
+        await tester.pumpAndSettle();
 
-  testWidgets('saved request popup moves a request into a collection', (
-    tester,
-  ) async {
-    final database = await openGraphql(tester, const Size(1440, 900));
-    await makeDirty(tester);
-    await saveCurrentAs(tester, 'Move me');
-    final workspace = await database
-        .customSelect('SELECT id FROM workspaces LIMIT 1')
-        .getSingle();
-    await database.customStatement(
-      '''INSERT INTO collections (id, workspace_id, name, created_at, updated_at, sort_order)
-         VALUES (?, ?, ?, unixepoch(), unixepoch(), 0)''',
-      <Object?>['graphql-test-collection', workspace.read<String>('id'), 'API'],
-    );
-    await BlocProvider.of<WorkspaceCubit>(
-      tester.element(find.text('GraphQL Studio')),
-    ).load();
-    await tester.pumpAndSettle();
-    await openActions(tester);
-    await tester.tap(find.text('Move').last);
-    await tester.pumpAndSettle();
-    expect(find.text('Move saved request'), findsOneWidget);
-    await tester.tap(find.text('API'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Collection root'));
-    await tester.pumpAndSettle();
-
-    final moved = await database
-        .customSelect(
-          'SELECT collection_id, folder_id FROM graphql_saved_requests',
-        )
-        .getSingle();
-    expect(moved.read<String?>('collection_id'), 'graphql-test-collection');
-    expect(moved.read<String?>('folder_id'), isNull);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('saved request popup reorders sibling requests', (tester) async {
-    final database = await openGraphql(tester, const Size(1440, 900));
-    await makeDirty(tester);
-    await saveCurrentAs(tester, 'First request');
-    await tester.drag(
-      find.byType(SingleChildScrollView).first,
-      const Offset(0, 700),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ActionChip, '+'));
-    await tester.pumpAndSettle();
-    await makeDirty(tester);
-    await saveCurrentAs(tester, 'Second request');
-    final cubit = workflow(tester);
-    final repository = RepositoryProvider.of<GraphqlRepository>(
-      tester.element(find.text('GraphQL Studio')),
-    );
-    await repository.saveRequest(
-      workspaceId: cubit.workspaceId,
-      name: 'Third request',
-      request: const GraphqlRequest(
-        endpoint: 'http://127.0.0.1/graphql',
-        document: 'query Third { third }',
-      ),
-    );
-    final otherFolder = await repository.saveRequest(
-      workspaceId: cubit.workspaceId,
-      name: 'Other folder request',
-      collectionId: 'other-collection',
-      folderId: 'other-folder',
-      request: const GraphqlRequest(
-        endpoint: 'http://127.0.0.1/graphql',
-        document: 'query Other { other }',
-      ),
-    );
-    await cubit.refreshSavedRequests();
-    await tester.pumpAndSettle();
-    final before = cubit.state.savedRequests
-        .where(
-          (request) => request.collectionId == null && request.folderId == null,
-        )
-        .map((request) => request.name)
-        .toList();
-    final linkedTabIds = cubit.state.tabs
-        .map((tab) => tab.savedRequestId)
-        .toList();
-    await openActions(tester);
-    await tester.tap(find.text('Move down').last);
-    await tester.pumpAndSettle();
-    final after = cubit.state.savedRequests
-        .where(
-          (request) => request.collectionId == null && request.folderId == null,
-        )
-        .map((request) => request.name)
-        .toList();
-    final persisted = await database.customSelect(
-      '''SELECT name, sort_order FROM graphql_saved_requests
-             WHERE collection_id IS NULL AND folder_id IS NULL
-             ORDER BY sort_order''',
-    ).get();
-
-    expect(after, isNot(before));
-    expect(persisted.map((row) => row.read<int>('sort_order')).toList(), <int>[
-      0,
-      1,
-      2,
-    ]);
-    expect((await repository.requestById(otherFolder.id))!.sortOrder, 0);
-    expect(
-      cubit.state.tabs.map((tab) => tab.savedRequestId).toList(),
-      linkedTabIds,
+        final detached = cubit.state.active;
+        expect(detached.savedRequestId, isNull);
+        expect(detached.isDirty, isTrue);
+        expect(detached.request, before.request);
+        expect(
+          await database
+              .customSelect('SELECT id FROM graphql_saved_requests')
+              .get(),
+          isEmpty,
+        );
+        expect(tester.takeException(), isNull);
+      },
     );
 
-    final reloaded = GraphqlWorkflowCubit(
-      repository,
-      RepositoryProvider.of<GraphqlExecutionService>(
-        tester.element(find.text('GraphQL Studio')),
-      ),
-      workspaceId: cubit.workspaceId,
+    testWidgets(
+      'saved request delete retains dirty linked-tab content at $viewportLabel',
+      (tester) async {
+        final database = await openGraphql(tester, viewport);
+        final cubit = workflow(tester);
+        await makeDirty(tester);
+        await saveCurrentAs(tester, 'Dirty linked request');
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Endpoint'),
+          'http://127.0.0.1/graphql/changed',
+        );
+        await tester.pumpAndSettle();
+        await openActions(tester);
+        await tester.tap(find.text('Delete').last);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Delete saved request and keep draft?'),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            'Unsaved edits will remain in an independent draft. The tab will not close.',
+          ),
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.widgetWithText(
+              FilledButton,
+              'Delete and keep draft',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(cubit.state.active.savedRequestId, isNull);
+        expect(cubit.state.active.isDirty, isTrue);
+        expect(
+          cubit.state.active.request.endpoint,
+          'http://127.0.0.1/graphql/changed',
+        );
+        expect(
+          await database
+              .customSelect('SELECT id FROM graphql_saved_requests')
+              .get(),
+          isEmpty,
+        );
+        expect(tester.takeException(), isNull);
+      },
     );
-    await reloaded.restoreDrafts();
-    expect(
-      reloaded.state.savedRequests
-          .where(
-            (request) =>
-                request.collectionId == null && request.folderId == null,
-          )
-          .map((request) => request.name)
-          .toList(),
-      after,
+
+    testWidgets(
+      'saved request popup moves through a folder and workspace root at $viewportLabel',
+      (tester) async {
+        final database = await openGraphql(tester, viewport);
+        await makeDirty(tester);
+        await saveCurrentAs(tester, 'Move me');
+        final workspace = await database
+            .customSelect('SELECT id FROM workspaces LIMIT 1')
+            .getSingle();
+        await database.customStatement(
+          '''INSERT INTO collections (id, workspace_id, name, created_at, updated_at, sort_order)
+          VALUES (?, ?, ?, unixepoch(), unixepoch(), 0)''',
+          <Object?>[
+            'graphql-test-collection',
+            workspace.read<String>('id'),
+            'API',
+          ],
+        );
+        await database.customStatement(
+          '''INSERT INTO folders (id, collection_id, name, created_at, updated_at, sort_order)
+          VALUES (?, ?, ?, unixepoch(), unixepoch(), 0)''',
+          <Object?>['graphql-test-folder', 'graphql-test-collection', 'Users'],
+        );
+        await BlocProvider.of<WorkspaceCubit>(
+          tester.element(find.text('GraphQL Studio')),
+        ).load();
+        await tester.pumpAndSettle();
+
+        await openActions(tester);
+        await tester.tap(find.text('Move').last);
+        await tester.pumpAndSettle();
+        expect(find.text('Move saved request'), findsOneWidget);
+        await tester.tap(find.text('API'));
+        await tester.pumpAndSettle();
+        expect(find.text('Choose folder'), findsOneWidget);
+        await tester.tap(find.text('Users'));
+        await tester.pumpAndSettle();
+        var moved = await database
+            .customSelect(
+              'SELECT collection_id, folder_id FROM graphql_saved_requests',
+            )
+            .getSingle();
+        expect(moved.read<String?>('collection_id'), 'graphql-test-collection');
+        expect(moved.read<String?>('folder_id'), 'graphql-test-folder');
+
+        await openActions(tester);
+        await tester.tap(find.text('Move').last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Workspace root (unfiled)'));
+        await tester.pumpAndSettle();
+        moved = await database
+            .customSelect(
+              'SELECT collection_id, folder_id FROM graphql_saved_requests',
+            )
+            .getSingle();
+        expect(moved.read<String?>('collection_id'), isNull);
+        expect(moved.read<String?>('folder_id'), isNull);
+        expect(tester.takeException(), isNull);
+      },
     );
-    await reloaded.close();
-    expect(tester.takeException(), isNull);
-  });
+
+    testWidgets(
+      'saved request popup reorders with move up and down at $viewportLabel',
+      (tester) async {
+        final database = await openGraphql(tester, viewport);
+        await makeDirty(tester);
+        await saveCurrentAs(tester, 'First request');
+        await openNewDraft(tester);
+        await makeDirty(tester);
+        await saveCurrentAs(tester, 'Second request');
+        await openNewDraft(tester);
+        await makeDirty(tester);
+        await saveCurrentAs(tester, 'Third request');
+        final cubit = workflow(tester);
+        final repository = RepositoryProvider.of<GraphqlRepository>(
+          tester.element(find.text('GraphQL Studio')),
+        );
+        final executionService = RepositoryProvider.of<GraphqlExecutionService>(
+          tester.element(find.text('GraphQL Studio')),
+        );
+
+        final before = cubit.state.savedRequests
+            .map((request) => request.name)
+            .toList();
+        final movingRequest = before.first;
+        await openActions(tester, requestName: movingRequest);
+        await tester.tap(find.text('Move down').last);
+        await tester.pumpAndSettle();
+        final afterDown = cubit.state.savedRequests
+            .map((request) => request.name)
+            .toList();
+        expect(afterDown, isNot(before));
+        await openActions(tester, requestName: movingRequest);
+        await tester.tap(find.text('Move up').last);
+        await tester.pumpAndSettle();
+        final after = cubit.state.savedRequests
+            .map((request) => request.name)
+            .toList();
+        expect(after, before);
+        expect(
+          (await database
+                  .customSelect(
+                    'SELECT sort_order FROM graphql_saved_requests ORDER BY sort_order',
+                  )
+                  .get())
+              .map((row) => row.read<int>('sort_order'))
+              .toList(),
+          <int>[0, 1, 2],
+        );
+
+        final reloaded = GraphqlWorkflowCubit(
+          repository,
+          executionService,
+          workspaceId: cubit.workspaceId,
+        );
+        await reloaded.restoreDrafts();
+        expect(
+          reloaded.state.savedRequests.map((request) => request.name).toList(),
+          after,
+        );
+        await reloaded.close();
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 }

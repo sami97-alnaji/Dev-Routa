@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package devroute.phase5.test;
+
+service Phase5TestService {
+  rpc Echo(EchoRequest) returns (EchoResponse);
+}
+
+message EchoRequest {
+  string message = 1;
+  repeated int32 samples = 2;
+}
+
+message EchoResponse {
+  string message = 1;
+}

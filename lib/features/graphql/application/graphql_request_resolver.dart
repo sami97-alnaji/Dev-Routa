@@ -26,8 +26,12 @@ class GraphqlRequestResolver {
     final environment = environmentId == null || environmentId.isEmpty
         ? <String, String>{}
         : await _repository.executionEnvironment(environmentId);
+    final environmentSecrets = environmentId == null || environmentId.isEmpty
+        ? <String>{}
+        : await _repository.executionEnvironmentSecretValues(environmentId);
     final secrets = <String>{};
     try {
+      _validateAuth(request);
       final resolver = VariableResolutionService();
       String resolveText(String value) {
         final result = resolver.resolve(value, environment: environment);
@@ -38,7 +42,7 @@ class GraphqlRequestResolver {
             '${[...result.unresolved, ...result.cycles].join(', ')}',
           );
         }
-        for (final candidate in environment.values) {
+        for (final candidate in environmentSecrets) {
           if (candidate.isNotEmpty && result.value.contains(candidate)) {
             secrets.add(candidate);
           }
@@ -69,7 +73,7 @@ class GraphqlRequestResolver {
             secrets,
           );
           headers['Authorization'] =
-              'Basic ${base64Encode(utf8.encode('${request.auth.username}:$password'))}';
+              'Basic ${base64Encode(utf8.encode('${resolveText(request.auth.username)}:$password'))}';
         case AuthType.apiKeyHeader:
           headers[request.auth.apiKeyName] = await _secret(
             request.auth.apiKeySecretRef,
@@ -126,6 +130,7 @@ class GraphqlRequestResolver {
       );
     } finally {
       environment.clear();
+      environmentSecrets.clear();
     }
   }
 
@@ -145,6 +150,32 @@ class GraphqlRequestResolver {
     }
     runtimeSecrets.add(value);
     return value;
+  }
+
+  void _validateAuth(GraphqlRequest request) {
+    final hasAuthorization = request.headers.keys.any(
+      (key) => key.toLowerCase() == 'authorization',
+    );
+    if (hasAuthorization &&
+        (request.auth.type == AuthType.bearer ||
+            request.auth.type == AuthType.basic)) {
+      throw const GraphqlFailure(
+        GraphqlFailureCategory.authConflict,
+        'Authentication conflict: remove the manual Authorization header.',
+      );
+    }
+    final apiKeyName = request.auth.apiKeyName;
+    if ((request.auth.type == AuthType.apiKeyHeader ||
+            request.auth.type == AuthType.apiKeyQuery) &&
+        apiKeyName.isNotEmpty &&
+        request.headers.keys.any(
+          (key) => key.toLowerCase() == apiKeyName.toLowerCase(),
+        )) {
+      throw const GraphqlFailure(
+        GraphqlFailureCategory.authConflict,
+        'Authentication conflict: the API-key name is already configured as a header.',
+      );
+    }
   }
 }
 

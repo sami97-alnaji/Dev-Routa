@@ -540,19 +540,16 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
   ) {
     final endpoint = next.historyEndpointFilter;
     final filtered = all.where((entry) {
-      final completion = entry.completion;
       final outcome = switch (next.historyOutcomeFilter) {
         GraphqlHistoryOutcomeFilter.all => true,
         GraphqlHistoryOutcomeFilter.success =>
-          completion == GraphqlCompletionCategory.success,
+          entry.outcome == GraphqlHistoryOutcome.success,
         GraphqlHistoryOutcomeFilter.graphqlError =>
-          completion == GraphqlCompletionCategory.graphqlFailure ||
-              completion == GraphqlCompletionCategory.partialSuccess,
+          entry.outcome == GraphqlHistoryOutcome.graphqlError,
         GraphqlHistoryOutcomeFilter.transportFailure =>
-          completion == GraphqlCompletionCategory.httpFailure ||
-              (completion == null && entry.completionName != 'cancelled'),
+          entry.outcome == GraphqlHistoryOutcome.transportFailure,
         GraphqlHistoryOutcomeFilter.cancelled =>
-          entry.completionName == 'cancelled',
+          entry.outcome == GraphqlHistoryOutcome.cancelled,
       };
       return outcome &&
           (next.historyOperationTypeFilter == null ||

@@ -69,6 +69,12 @@ void main() {
     );
     await cubit.refreshHistory();
     expect(cubit.state.availableHistoryEndpoints, hasLength(2));
+    expect(
+      cubit.state.availableHistoryEndpoints.singleWhere(
+        (value) => value.contains('one.example'),
+      ),
+      isNot(contains('hidden')),
+    );
     cubit.setHistoryOutcomeFilter(GraphqlHistoryOutcomeFilter.transportFailure);
     cubit.setHistoryOperationTypeFilter(GraphqlOperationType.query);
     cubit.setHistoryEndpointFilter(
@@ -90,6 +96,70 @@ void main() {
     cubit.clearHistoryFilters();
     expect(cubit.state.hasActiveHistoryFilters, isFalse);
     expect(cubit.state.history, hasLength(2));
+    await cubit.close();
+    await database.close();
+  });
+
+  test(
+    'legacy entries stay available without being called transport failures',
+    () async {
+      final database = AppDatabase.forTesting(NativeDatabase.memory());
+      final repository = GraphqlRepository(database);
+      await database.customStatement(
+        'INSERT INTO graphql_history (id, draft_id, workspace_id, operation_type, summary_json, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        <Object?>[
+          'legacy',
+          null,
+          'workspace',
+          'query',
+          '{"request":{"endpoint":"https://legacy.example/graphql?token=old"}}',
+          DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        ],
+      );
+      final cubit = GraphqlWorkflowCubit(
+        repository,
+        GraphqlExecutionService(GraphqlHttpService(), repository),
+        workspaceId: 'workspace',
+      );
+      await cubit.refreshHistory();
+      expect(cubit.state.history, hasLength(1));
+      expect(
+        cubit.state.allHistory.single.outcome,
+        GraphqlHistoryOutcome.unknown,
+      );
+      cubit.setHistoryOutcomeFilter(
+        GraphqlHistoryOutcomeFilter.transportFailure,
+      );
+      expect(cubit.state.history, isEmpty);
+      cubit.clearHistoryFilters();
+      expect(cubit.state.history, hasLength(1));
+      await cubit.close();
+      await database.close();
+    },
+  );
+
+  test('deleting the last endpoint resets only the endpoint filter', () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    final repository = GraphqlRepository(database);
+    await repository.record(
+      workspaceId: 'workspace',
+      type: GraphqlOperationType.query,
+      response: _response(GraphqlCompletionCategory.success),
+      request: const GraphqlRequest(
+        endpoint: 'https://only.example/graphql',
+        document: 'query Only { only }',
+      ),
+    );
+    final cubit = GraphqlWorkflowCubit(
+      repository,
+      GraphqlExecutionService(GraphqlHttpService(), repository),
+      workspaceId: 'workspace',
+    );
+    await cubit.refreshHistory();
+    cubit.setHistoryEndpointFilter('https://only.example/graphql');
+    await cubit.deleteHistory(cubit.state.history.single.id);
+    expect(cubit.state.historyEndpointFilter, isNull);
+    expect(cubit.state.availableHistoryEndpoints, isEmpty);
     await cubit.close();
     await database.close();
   });

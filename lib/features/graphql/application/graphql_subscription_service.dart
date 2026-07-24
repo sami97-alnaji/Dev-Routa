@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../core/security/secret_masker.dart';
 import '../data/graphql_subscription_transport.dart';
 import '../domain/graphql_document_parser.dart';
 import '../domain/graphql_models.dart';
@@ -105,6 +106,9 @@ class GraphqlSubscriptionService {
   final GraphqlRequestResolver? _resolver;
   final Map<String, GraphqlSubscriptionConnection> _connections =
       <String, GraphqlSubscriptionConnection>{};
+  final Map<String, Set<String>> _runtimeSecrets = <String, Set<String>>{};
+
+  int runtimeSecretCount(String tabId) => _runtimeSecrets[tabId]?.length ?? 0;
 
   Future<GraphqlSubscriptionConnection> connect({
     required String tabId,
@@ -113,6 +117,7 @@ class GraphqlSubscriptionService {
     Map<String, Object?> connectionParams = const <String, Object?>{},
     Duration ackTimeout = const Duration(seconds: 5),
   }) async {
+    await disconnect(tabId);
     final resolved = _resolver == null
         ? null
         : await _resolver.resolve(
@@ -143,7 +148,6 @@ class GraphqlSubscriptionService {
       );
     }
 
-    await disconnect(tabId);
     final connection = await _transport.connect(
       endpoint: runtimeRequest.endpoint,
       document: runtimeRequest.document,
@@ -152,13 +156,44 @@ class GraphqlSubscriptionService {
       connectionParams: runtimeConnectionParams,
       ackTimeout: ackTimeout,
     );
-    _connections[tabId] = connection;
-    return connection;
+    final secrets = <String>{...?resolved?.runtimeSecrets};
+    _runtimeSecrets[tabId] = secrets;
+    final scopedConnection = connection.mapEvents(
+      (event) => GraphqlSubscriptionEvent(
+        data: SecretMasker.redactStructured(
+          event.data,
+          runtimeSecrets: secrets,
+        ),
+        errors: event.errors
+            .map(
+              (error) => GraphqlResponseError.fromJson(
+                SecretMasker.redactStructured(
+                  error.toJson(),
+                  runtimeSecrets: secrets,
+                ),
+              ),
+            )
+            .toList(growable: false),
+        extensions: SecretMasker.redactStructured(
+          event.extensions,
+          runtimeSecrets: secrets,
+        ),
+        receivedAt: event.receivedAt,
+      ),
+      onDisconnect: () async => _clearRuntimeSecrets(tabId, secrets),
+    );
+    _connections[tabId] = scopedConnection;
+    return scopedConnection;
   }
 
   Future<void> disconnect(String tabId) async {
     final connection = _connections.remove(tabId);
-    await connection?.disconnect();
+    final secrets = _runtimeSecrets.remove(tabId);
+    try {
+      await connection?.disconnect();
+    } finally {
+      secrets?.clear();
+    }
   }
 
   void stop(String tabId) => _connections[tabId]?.stop();
@@ -168,6 +203,17 @@ class GraphqlSubscriptionService {
     for (final id in ids) {
       await disconnect(id);
     }
+    for (final secrets in _runtimeSecrets.values) {
+      secrets.clear();
+    }
+    _runtimeSecrets.clear();
+  }
+
+  Future<void> _clearRuntimeSecrets(String tabId, Set<String> expected) async {
+    if (identical(_runtimeSecrets[tabId], expected)) {
+      _runtimeSecrets.remove(tabId);
+    }
+    expected.clear();
   }
 }
 
@@ -178,6 +224,7 @@ class _GraphqlSubscriptionContext {
     required this.connectionParams,
     required this.ackTimeout,
     required this.reconnectPolicy,
+    required this.generation,
   });
 
   final GraphqlRequest request;
@@ -185,6 +232,17 @@ class _GraphqlSubscriptionContext {
   final Map<String, Object?> connectionParams;
   final Duration ackTimeout;
   final GraphqlReconnectPolicy reconnectPolicy;
+  final int generation;
+
+  _GraphqlSubscriptionContext nextGeneration(int value) =>
+      _GraphqlSubscriptionContext(
+        request: request,
+        environmentId: environmentId,
+        connectionParams: connectionParams,
+        ackTimeout: ackTimeout,
+        reconnectPolicy: reconnectPolicy,
+        generation: value,
+      );
 }
 
 class GraphqlSubscriptionCubit
@@ -200,6 +258,7 @@ class GraphqlSubscriptionCubit
   final Map<String, Timer> _reconnectTimers = <String, Timer>{};
   final Set<String> _intentionalDisconnects = <String>{};
   final Set<String> _handlingTermination = <String>{};
+  final Map<String, int> _sessionGenerations = <String, int>{};
 
   static const int _maximumEvents = 500;
 
@@ -211,12 +270,14 @@ class GraphqlSubscriptionCubit
     Duration ackTimeout = const Duration(seconds: 5),
     GraphqlReconnectPolicy reconnectPolicy = const GraphqlReconnectPolicy(),
   }) async {
+    final generation = _nextGeneration(tabId);
     _contexts[tabId] = _GraphqlSubscriptionContext(
       request: request,
       environmentId: environmentId,
       connectionParams: Map<String, Object?>.unmodifiable(connectionParams),
       ackTimeout: ackTimeout,
       reconnectPolicy: reconnectPolicy,
+      generation: generation,
     );
     _intentionalDisconnects.remove(tabId);
     _handlingTermination.remove(tabId);
@@ -227,7 +288,9 @@ class GraphqlSubscriptionCubit
   }
 
   Future<void> reconnect(String tabId) async {
-    if (!_contexts.containsKey(tabId)) return;
+    final context = _contexts[tabId];
+    if (context == null) return;
+    _contexts[tabId] = context.nextGeneration(_nextGeneration(tabId));
     _intentionalDisconnects.remove(tabId);
     _handlingTermination.remove(tabId);
     _reconnectTimers.remove(tabId)?.cancel();
@@ -246,9 +309,7 @@ class GraphqlSubscriptionCubit
     required bool reconnecting,
   }) async {
     final context = _contexts[tabId];
-    if (context == null ||
-        _intentionalDisconnects.contains(tabId) ||
-        isClosed) {
+    if (context == null || !_isCurrent(tabId, context.generation) || isClosed) {
       return;
     }
 
@@ -274,7 +335,7 @@ class GraphqlSubscriptionCubit
         connectionParams: context.connectionParams,
         ackTimeout: context.ackTimeout,
       );
-      if (_intentionalDisconnects.contains(tabId) || isClosed) {
+      if (!_isCurrent(tabId, context.generation) || isClosed) {
         await _service.disconnect(tabId);
         return;
       }
@@ -292,17 +353,23 @@ class GraphqlSubscriptionCubit
         ),
       );
       _listeners[tabId] = connection.events.listen(
-        (event) => _addEvent(tabId, event),
-        onError: (Object error) => unawaited(_handleTermination(tabId, error)),
-        onDone: () => unawaited(_handleTermination(tabId, null)),
+        (event) => _addEvent(tabId, event, context.generation),
+        onError: (Object error) =>
+            unawaited(_handleTermination(tabId, error, context.generation)),
+        onDone: () =>
+            unawaited(_handleTermination(tabId, null, context.generation)),
       );
     } on Object catch (error) {
-      await _handleTermination(tabId, error);
+      await _handleTermination(tabId, error, context.generation);
     }
   }
 
-  Future<void> _handleTermination(String tabId, Object? error) async {
-    if (isClosed || _intentionalDisconnects.contains(tabId)) return;
+  Future<void> _handleTermination(
+    String tabId,
+    Object? error,
+    int generation,
+  ) async {
+    if (isClosed || !_isCurrent(tabId, generation)) return;
     if (!_handlingTermination.add(tabId)) return;
 
     final current = state[tabId] ?? const GraphqlSubscriptionTabState();
@@ -357,6 +424,7 @@ class GraphqlSubscriptionCubit
       _reconnectTimers[tabId] = Timer(delay, () {
         _reconnectTimers.remove(tabId);
         _handlingTermination.remove(tabId);
+        if (!_isCurrent(tabId, generation)) return;
         unawaited(
           _connectAttempt(
             tabId,
@@ -385,6 +453,7 @@ class GraphqlSubscriptionCubit
   }
 
   Future<void> disconnect(String tabId) async {
+    _nextGeneration(tabId);
     _intentionalDisconnects.add(tabId);
     _reconnectTimers.remove(tabId)?.cancel();
     _handlingTermination.remove(tabId);
@@ -405,7 +474,8 @@ class GraphqlSubscriptionCubit
     _copy(tabId, events: const <GraphqlTimelineEvent>[], droppedEvents: 0),
   );
 
-  void _addEvent(String tabId, GraphqlSubscriptionEvent event) {
+  void _addEvent(String tabId, GraphqlSubscriptionEvent event, int generation) {
+    if (!_isCurrent(tabId, generation)) return;
     final previous = state[tabId] ?? const GraphqlSubscriptionTabState();
     final events = <GraphqlTimelineEvent>[
       ...previous.events,
@@ -449,6 +519,16 @@ class GraphqlSubscriptionCubit
     emit(<String, GraphqlSubscriptionTabState>{...state, tabId: value});
   }
 
+  int _nextGeneration(String tabId) {
+    final value = (_sessionGenerations[tabId] ?? 0) + 1;
+    _sessionGenerations[tabId] = value;
+    return value;
+  }
+
+  bool _isCurrent(String tabId, int generation) =>
+      !_intentionalDisconnects.contains(tabId) &&
+      _sessionGenerations[tabId] == generation;
+
   @override
   Future<void> close() async {
     _intentionalDisconnects.addAll(_contexts.keys);
@@ -462,6 +542,7 @@ class GraphqlSubscriptionCubit
     _listeners.clear();
     _contexts.clear();
     _handlingTermination.clear();
+    _sessionGenerations.clear();
     await _service.dispose();
     return super.close();
   }

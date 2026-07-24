@@ -14,6 +14,7 @@ enum GraphqlFailureCategory {
   malformedResponse,
   graphql,
   protocol,
+  authConflict,
   introspectionDenied,
   unknown,
 }

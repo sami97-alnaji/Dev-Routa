@@ -708,7 +708,7 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
                 const Divider(),
                 SizedBox(height: 260, child: saved),
                 const Divider(),
-                SizedBox(height: 260, child: history),
+                SizedBox(height: 262, child: history),
               ],
             )
           : Row(
@@ -1012,6 +1012,7 @@ class _HistoryPanelState extends State<_HistoryPanel> {
       Text('GraphQL history', style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 6),
       TextField(
+        key: const Key('graphql-history-search'),
         controller: _search,
         onChanged: widget.onSearch,
         decoration: const InputDecoration(

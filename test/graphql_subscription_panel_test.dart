@@ -190,4 +190,28 @@ void main() {
     );
     expect(stopCalls, 0);
   });
+
+  testWidgets('redacts a sensitive subscription error before rendering', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      subject(
+        state: timelineState(
+          phase: GraphqlSubscriptionPhase.failed,
+          error: const GraphqlFailure(
+            GraphqlFailureCategory.graphql,
+            'Subscription failed with token=private-value',
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('private-value'), findsNothing);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const Key('graphql-subscription-error')))
+          .data,
+      contains('[REDACTED]'),
+    );
+  });
 }

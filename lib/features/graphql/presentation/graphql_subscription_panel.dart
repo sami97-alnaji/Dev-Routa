@@ -158,7 +158,8 @@ class _GraphqlSubscriptionPanelState extends State<GraphqlSubscriptionPanel> {
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
-              '${state.error!.category.name}: ${state.error!.message}',
+              '${state.error!.category.name}: '
+              '${SecretMasker.redactText(state.error!.message)}',
               key: const Key('graphql-subscription-error'),
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),

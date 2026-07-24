@@ -123,6 +123,8 @@ class GraphqlHistoryEntry {
   final Map<String, Object?> summary;
   final DateTime createdAt;
 
+  /// The persisted summary deliberately has no endpoint query or fragment, so
+  /// filter values and the UI cannot reveal query-string credentials.
   String get endpoint =>
       (summary['request'] as Map?)?['endpoint']?.toString() ?? '';
   String? get completionName => summary['completion']?.toString();
@@ -133,6 +135,30 @@ class GraphqlHistoryEntry {
     'httpFailure' => GraphqlCompletionCategory.httpFailure,
     _ => null,
   };
+
+  GraphqlHistoryOutcome get outcome {
+    if (completionName == 'cancelled' ||
+        summary['failureCategory'] == GraphqlFailureCategory.cancelled.name) {
+      return GraphqlHistoryOutcome.cancelled;
+    }
+    return switch (completion) {
+      GraphqlCompletionCategory.success => GraphqlHistoryOutcome.success,
+      GraphqlCompletionCategory.partialSuccess ||
+      GraphqlCompletionCategory.graphqlFailure =>
+        GraphqlHistoryOutcome.graphqlError,
+      GraphqlCompletionCategory.httpFailure =>
+        GraphqlHistoryOutcome.transportFailure,
+      null => GraphqlHistoryOutcome.unknown,
+    };
+  }
+}
+
+enum GraphqlHistoryOutcome {
+  success,
+  graphqlError,
+  transportFailure,
+  cancelled,
+  unknown,
 }
 
 class GraphqlStoredSchemaSnapshot {
@@ -238,6 +264,34 @@ class GraphqlRepository {
     return values;
   }
 
+  Future<Set<String>> executionEnvironmentSecretValues(
+    String environmentId,
+  ) async {
+    final rows = await _database
+        .customSelect(
+          'SELECT name, value_or_secret_ref FROM environment_variables WHERE environment_id = ? AND is_secret = ? AND enabled = ?',
+          variables: <Variable>[
+            Variable.withString(environmentId),
+            Variable.withBool(true),
+            Variable.withBool(true),
+          ],
+        )
+        .get();
+    final values = <String>{};
+    for (final row in rows) {
+      final value = await _secureStorage?.readSecret(
+        row.read<String>('value_or_secret_ref'),
+      );
+      if (value == null || value.isEmpty) {
+        throw StateError(
+          'Missing secure environment reference for ${row.read<String>('name')}.',
+        );
+      }
+      values.add(value);
+    }
+    return values;
+  }
+
   Future<GraphqlDraft> saveDraft({
     String? id,
     required String workspaceId,
@@ -313,19 +367,7 @@ class GraphqlRepository {
       type.name,
       SecretMasker.redactText(
         jsonEncode(<String, Object?>{
-          'request': request == null
-              ? null
-              : <String, Object?>{
-                  'endpoint': request.endpoint,
-                  'document': request.document,
-                  'operationName': operationName ?? request.operationName,
-                  'variables': request.variables,
-                  'extensions': request.extensions,
-                  'headers': SecretMasker.redactHeaders(request.headers),
-                  'useGet': request.useGet,
-                  'authType': request.auth.type.name,
-                  'environmentId': null,
-                },
+          'request': _historyRequest(request, operationName),
           'statusCode': response.statusCode,
           'completion': response.completion.name,
           'data': response.data,
@@ -358,19 +400,7 @@ class GraphqlRepository {
       type.name,
       SecretMasker.redactText(
         jsonEncode(<String, Object?>{
-          'request': request == null
-              ? null
-              : <String, Object?>{
-                  'endpoint': request.endpoint,
-                  'document': request.document,
-                  'operationName': operationName ?? request.operationName,
-                  'variables': request.variables,
-                  'extensions': request.extensions,
-                  'headers': SecretMasker.redactHeaders(request.headers),
-                  'useGet': request.useGet,
-                  'authType': request.auth.type.name,
-                  'environmentId': null,
-                },
+          'request': _historyRequest(request, operationName),
           'completion': failure.category == GraphqlFailureCategory.cancelled
               ? 'cancelled'
               : 'httpFailure',
@@ -445,6 +475,29 @@ class GraphqlRepository {
          (SELECT id FROM graphql_history WHERE workspace_id = ? ORDER BY created_at DESC LIMIT ?)''',
       <Object?>[workspaceId, workspaceId, maximumCount],
     );
+  }
+
+  Map<String, Object?>? _historyRequest(
+    GraphqlRequest? request,
+    String? operationName,
+  ) => request == null
+      ? null
+      : <String, Object?>{
+          'endpoint': _safeHistoryEndpoint(request.endpoint),
+          'document': request.document,
+          'operationName': operationName ?? request.operationName,
+          'variables': request.variables,
+          'extensions': request.extensions,
+          'headers': SecretMasker.redactHeaders(request.headers),
+          'useGet': request.useGet,
+          'authType': request.auth.type.name,
+          'environmentId': null,
+        };
+
+  String _safeHistoryEndpoint(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null) return value.split('?').first.split('#').first;
+    return uri.replace(userInfo: '', query: null, fragment: null).toString();
   }
 
   String _draftPayload(GraphqlDraft draft) => jsonEncode(<String, Object?>{

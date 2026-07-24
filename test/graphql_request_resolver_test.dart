@@ -68,6 +68,7 @@ void main() {
         containsPair('Authorization', 'Bearer super-secret'),
       );
       expect(resolved.runtimeSecrets, contains('super-secret'));
+      expect(resolved.runtimeSecrets, isNot(contains('example.test')));
       expect(raw.endpoint, 'wss://{{host}}/graphql');
       expect(raw.auth.tokenSecretRef, 'token-ref');
       await database.close();
@@ -107,4 +108,78 @@ void main() {
       await database.close();
     },
   );
+
+  test('resolver rejects auth conflicts without exposing a secret', () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    final resolver = GraphqlRequestResolver(
+      GraphqlRepository(database),
+      secureStorage: _Secrets(<String, String>{'token': 'private-value'}),
+    );
+    await expectLater(
+      resolver.resolve(
+        const GraphqlRequest(
+          endpoint: 'wss://localhost/graphql',
+          document: 'subscription Tick { tick }',
+          headers: <String, String>{'Authorization': 'Bearer manual'},
+          auth: RequestAuthModel(
+            type: AuthType.bearer,
+            tokenSecretRef: 'token',
+          ),
+        ),
+      ),
+      throwsA(
+        isA<GraphqlFailure>()
+            .having(
+              (failure) => failure.category,
+              'category',
+              GraphqlFailureCategory.authConflict,
+            )
+            .having(
+              (failure) => failure.message,
+              'message',
+              isNot(contains('private-value')),
+            ),
+      ),
+    );
+    await database.close();
+  });
+
+  test('resolver handles Basic and API-key secret references', () async {
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    final secrets = _Secrets(<String, String>{
+      'password': 'basic-password',
+      'api-key': 'api-secret',
+    });
+    final resolver = GraphqlRequestResolver(
+      GraphqlRepository(database),
+      secureStorage: secrets,
+    );
+    final basic = await resolver.resolve(
+      const GraphqlRequest(
+        endpoint: 'wss://localhost/graphql',
+        document: 'subscription Updates { update }',
+        auth: RequestAuthModel(
+          type: AuthType.basic,
+          username: 'user',
+          passwordSecretRef: 'password',
+        ),
+      ),
+    );
+    final apiKey = await resolver.resolve(
+      const GraphqlRequest(
+        endpoint: 'wss://localhost/graphql',
+        document: 'subscription Updates { update }',
+        auth: RequestAuthModel(
+          type: AuthType.apiKeyHeader,
+          apiKeyName: 'x-api-key',
+          apiKeySecretRef: 'api-key',
+        ),
+      ),
+    );
+    expect(basic.request.headers['Authorization'], startsWith('Basic '));
+    expect(basic.runtimeSecrets, contains('basic-password'));
+    expect(apiKey.request.headers['x-api-key'], 'api-secret');
+    expect(apiKey.runtimeSecrets, contains('api-secret'));
+    await database.close();
+  });
 }

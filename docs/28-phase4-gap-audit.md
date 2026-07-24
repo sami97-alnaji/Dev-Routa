@@ -1,31 +1,24 @@
 # Phase 4 GraphQL gap audit
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 ## Verified baseline
 
-`main` remains `72f877f`. The final-closure branch is synchronized at `366d328921eadfc8c915ae0251044dad485797e0`. Preserved implementation commits include `9480968`, `5163345`, `b16b134`, `5b8535b`, `2b195c1`, `f6e7d36`, `927683b`, `503c2a8`, `dd097d1`, `16ad39b`, and `366d328`.
-
-Verified local evidence: 75 tests passed, `flutter analyze` passed, Windows debug build passed, Android debug build passed, and Drift remains schema version 6. Endpoint validation and authentication-header conflict validation are implemented. JSON-aware history comparison remains a domain foundation; comparison UI and export are pending. No final PR, merge, closure document, or milestone exists.
+`main` is at `15bb40b5e879d6c1473716c10cfb36354617f4a2`, the merge commit for PR #4 (`feat: complete Phase 4 GraphQL Studio`). Flutter CI succeeded. Final local verification on that commit passed dependency resolution, generation, formatting, analysis, 123 tests, and Windows/Android debug builds. Drift remains schema version 6.
 
 ## Requirement audit
 
 | Area | Classification | Remaining gap |
 |---|---|---|
-| GraphQL parsing | COMPLETE | AST parser and operation selection are covered. |
-| HTTP execution | PARTIAL | Central execution, environment resolution, auth references, endpoint/auth validation, typed results, HTTP/non-JSON classification, TLS enforcement, and bounded previews exist. Complete configuration editors, diagnostics and response tools remain. |
-| HTTP history | PARTIAL | Sanitized search, retention, deletion, replay, UI, and comparison domain foundation exist. Metadata filters, pin/tags/notes, exports, comparison UI, and diagnostic bundles remain. |
-| Saved requests and tabs | PARTIAL | CRUD, drafts, restoration, independent copies, dirty state, and basic UI exist. Rename/move/reorder/refresh and mixed close protection remain. |
-| Subscriptions | PARTIAL | Tab-owned service/Cubit, transport foundation, bounded timeline, and connect/disconnect exist. Secure parameters, reconnect/resubscribe, history/comparison/export and advanced lifecycle remain. |
-| Schema | PARTIAL | Introspection, hashing, snapshots, deduplication, basic diff, and skeleton generation exist. Connected Explorer, offline/retention UI, and complete diff workflows remain. |
-| Desktop UX | PARTIAL | Editor, tabs, configuration foundations, history/replay, and subscription controls exist. Focused response/comparison/schema tools, shortcuts, and close dialogs remain. |
-| Android UX | MISSING | Dedicated GraphQL mobile workflow and lifecycle/accessibility coverage remain. |
-| Import/export | MISSING | GraphQL/cURL import and sanitized document/response/history/subscription/schema/diagnostic exports remain. |
-| Security/migrations | PARTIAL | Secret references, masking, TLS enforcement, and migration basics exist. Full runtime cleanup, redaction scan, cascades, retention, and security coverage remain. |
-| Delivery | PARTIAL | Local validation passes. CI, PR, merge, closure document, and milestone remain. |
+| GraphQL parsing | COMPLETE | AST parsing, operation selection, and validation are covered. |
+| HTTP execution and history | COMPLETE | Typed execution, cancellation, response diagnostics, searchable filtered history, replay, deletion, and comparison are covered. |
+| Saved requests and tabs | COMPLETE | Draft restoration, create/open/save/rename/duplicate/move/reorder/delete, and dirty-tab protection are covered. |
+| Subscriptions | COMPLETE | `graphql-transport-ws`, reconnect/resubscribe generation protection, timeline controls, secret isolation, and cleanup are covered. |
+| Schema | COMPLETE | Introspection, snapshots, offline restoration, Schema Explorer, comparison, and operation skeleton generation are covered. |
+| Windows and Android UX | COMPLETE | Responsive 800x600 and 390x844 coverage is present. |
+| Security and migrations | COMPLETE | Secure references, structured/reflected-secret masking, runtime cleanup, TLS and authentication checks, and schema-6 migration coverage are present. |
+| Delivery | COMPLETE | PR #4 merged, CI succeeded, and final-main verification completed. |
 
 ## Remaining scope
 
-Implement only the PARTIAL/MISSING items above. Do not reimplement completed parser, CRUD foundation, draft tabs, centralized execution, history foundations, subscription foundations, schema persistence, or skeleton generation.
-
-Phase 4 remains IN PROGRESS until all remaining workflows are connected, persisted, secure, tested, built, accepted by CI, merged to `main`, documented, and tagged.
+The former gaps above are closed. Advanced import/export formats, richer subscription archives, cloud/team collaboration, additional protocol families, and release distribution/signing are deferred roadmap scope; they are not accepted Phase 4 requirements. See [the repository closure](37-phase4-repository-closure.md) for final evidence. The annotated `v0.4.0-alpha.1` tag has not yet been created.

@@ -9,9 +9,9 @@ is always consent-gated.
 
 - Phase 2: Complete
 - Phase 3: Complete
-- Phase 4: In progress
-- Repository closure: Phase 2/3 complete; Phase 4 pending
-- Current milestone: v0.3.0-alpha.1 (Phase 4 work is unreleased)
+- Phase 4: Complete
+- Repository closure: Phase 2/3/4 complete
+- Current milestone: v0.4.0-alpha.1 (ready for an annotated milestone; tag not created)
 
 This is a validated alpha development milestone, not a final production release.
 
@@ -36,14 +36,16 @@ This is a validated alpha development milestone, not a final production release.
 - Local diagnostics plus optional AI analysis. AI is disabled by default and
   requires explicit, reversible consent with a redacted payload preview.
 
-### Phase 4: GraphQL Studio (in progress)
+### Phase 4: GraphQL Studio
 
-- AST-backed operation discovery and validation using `gql`.
-- Typed GraphQL HTTP responses and errors, deterministic local HTTP coverage,
-  `graphql-transport-ws` subscription foundations, schema introspection tools,
-  schema hashing/diff, and persisted saved-request foundations.
-- Full GraphQL CRUD/history, schema explorer, mobile workflow, CI closure, and
-  the Phase 4 milestone remain pending.
+- AST-backed operation discovery and validation using `gql`, typed HTTP query
+  and mutation execution, safe environment/auth resolution, cancellation, and
+  response diagnostics.
+- Multi-tab drafts, saved-request lifecycle, dirty-close/exit protection,
+  searchable history with replay/comparison, and `graphql-transport-ws`
+  subscriptions with bounded reconnect and runtime-secret isolation.
+- Introspection, persisted schema snapshots, Schema Explorer, comparison, and
+  operation skeleton generation with Windows and Android responsive coverage.
 
 ## Platforms and stack
 
@@ -89,10 +91,9 @@ docs/           product, architecture, phase, protocol, and closure documentatio
 
 ## Protocol support and intentional exclusions
 
-REST, WebSocket, SSE, HTTP streaming, and the Phase 4 GraphQL foundation are
-supported. gRPC, SOAP, MQTT, Socket.IO, cloud sync, accounts, teams, billing,
-public mock servers, traffic proxies, and real hosted AI providers remain
-deferred.
+REST, WebSocket, SSE, HTTP streaming, and GraphQL Studio are supported. gRPC,
+SOAP, MQTT, Socket.IO, cloud sync, accounts, teams, billing, public mock
+servers, traffic proxies, and real hosted AI providers remain deferred.
 
 ## Development workflow
 
@@ -123,3 +124,4 @@ receives data or credentials.
 - [GraphQL storage, history, and security](docs/34-graphql-storage-history-and-security.md)
 - [Phase 4 test plan](docs/35-phase4-test-plan.md)
 - [Phase 4 completion report](docs/36-phase4-completion-report.md)
+- [Phase 4 repository closure](docs/37-phase4-repository-closure.md)

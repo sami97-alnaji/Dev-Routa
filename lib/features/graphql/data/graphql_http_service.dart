@@ -15,6 +15,21 @@ class GraphqlHttpService {
   final Map<String, CancelToken> _cancellations = <String, CancelToken>{};
 
   Future<GraphqlResponse> execute(String id, GraphqlRequest request) async {
+    final endpoint = Uri.tryParse(request.endpoint);
+    if (endpoint == null ||
+        (endpoint.scheme != 'http' && endpoint.scheme != 'https') ||
+        endpoint.host.isEmpty) {
+      throw const GraphqlFailure(
+        GraphqlFailureCategory.validation,
+        'The GraphQL endpoint must be a valid HTTP or HTTPS URL.',
+      );
+    }
+    if (!request.settings.verifyCertificates) {
+      throw const GraphqlFailure(
+        GraphqlFailureCategory.validation,
+        'Disabling TLS certificate verification is not supported.',
+      );
+    }
     final analysis = GraphqlDocumentParser.analyze(request.document);
     final operation = GraphqlDocumentParser.select(
       analysis,
@@ -38,9 +53,33 @@ class GraphqlHttpService {
         'Only GraphQL queries may use GET.',
       );
     }
+    final hasAuthorization = request.headers.keys.any(
+      (key) => key.toLowerCase() == 'authorization',
+    );
+    final authRequiresAuthorization =
+        request.auth.type == AuthType.bearer ||
+        request.auth.type == AuthType.basic;
+    if (hasAuthorization && authRequiresAuthorization) {
+      throw const GraphqlFailure(
+        GraphqlFailureCategory.validation,
+        'Authentication conflict: remove the manual Authorization header.',
+      );
+    }
+    if ((request.auth.type == AuthType.apiKeyHeader ||
+            request.auth.type == AuthType.apiKeyQuery) &&
+        request.auth.apiKeyName.isNotEmpty &&
+        request.headers.keys.any(
+          (key) => key.toLowerCase() == request.auth.apiKeyName.toLowerCase(),
+        )) {
+      throw const GraphqlFailure(
+        GraphqlFailureCategory.validation,
+        'Authentication conflict: the API-key name is already configured as a header.',
+      );
+    }
     final token = CancelToken();
     _cancellations[id] = token;
     final stopwatch = Stopwatch()..start();
+    Response<Object?>? response;
     try {
       final payload = <String, Object?>{
         'query': request.document,
@@ -62,7 +101,7 @@ class GraphqlHttpService {
           request.auth.apiKeySecretRef,
         );
       }
-      final response = await _dio.request<Object?>(
+      response = await _dio.request<Object?>(
         request.endpoint,
         data: request.useGet ? null : payload,
         queryParameters:
@@ -78,6 +117,15 @@ class GraphqlHttpService {
           },
           responseType: ResponseType.plain,
           validateStatus: (_) => true,
+          connectTimeout: Duration(
+            milliseconds: request.settings.connectTimeoutMs,
+          ),
+          sendTimeout: Duration(milliseconds: request.settings.sendTimeoutMs),
+          receiveTimeout: Duration(
+            milliseconds: request.settings.receiveTimeoutMs,
+          ),
+          followRedirects: request.settings.followRedirects,
+          maxRedirects: request.settings.maxRedirects,
         ),
         cancelToken: token,
       );
@@ -90,15 +138,39 @@ class GraphqlHttpService {
       final decoded = jsonDecode(raw);
       if (decoded is! Map) {
         throw const GraphqlFailure(
-          GraphqlFailureCategory.malformedResponse,
+          GraphqlFailureCategory.http,
           'GraphQL response root must be an object.',
         );
       }
-      final responseErrors = (decoded['errors'] as List? ?? const <Object?>[])
+      if (decoded['data'] == null &&
+          decoded['errors'] == null &&
+          decoded['extensions'] == null) {
+        throw const GraphqlFailure(
+          GraphqlFailureCategory.malformedResponse,
+          'GraphQL response envelope has no data, errors, or extensions.',
+        );
+      }
+      final rawErrors = decoded['errors'];
+      if (rawErrors != null && rawErrors is! List) {
+        throw const GraphqlFailure(
+          GraphqlFailureCategory.malformedResponse,
+          'GraphQL response errors must be an array.',
+        );
+      }
+      final responseErrors = (rawErrors as List? ?? const <Object?>[])
           .map(GraphqlResponseError.fromJson)
           .toList(growable: false);
+      final preview = boundedGraphqlPreview(raw);
+      final status = response.statusCode;
+      final completion = status != null && (status < 200 || status >= 300)
+          ? GraphqlCompletionCategory.httpFailure
+          : responseErrors.isNotEmpty && decoded['data'] != null
+          ? GraphqlCompletionCategory.partialSuccess
+          : responseErrors.isNotEmpty
+          ? GraphqlCompletionCategory.graphqlFailure
+          : GraphqlCompletionCategory.success;
       return GraphqlResponse(
-        statusCode: response.statusCode,
+        statusCode: status,
         data: decoded['data'],
         errors: responseErrors,
         extensions: decoded['extensions'],
@@ -107,6 +179,9 @@ class GraphqlHttpService {
         headers: SecretMasker.redactHeaders(
           response.headers.map.map((k, v) => MapEntry(k, v.join(','))),
         ),
+        completion: completion,
+        rawPreview: preview.value,
+        truncated: preview.truncated,
       );
     } on DioException catch (error) {
       throw GraphqlFailure(
@@ -116,7 +191,9 @@ class GraphqlHttpService {
       );
     } on FormatException catch (error) {
       throw GraphqlFailure(
-        GraphqlFailureCategory.malformedResponse,
+        response != null && (response.statusCode ?? 200) >= 400
+            ? GraphqlFailureCategory.http
+            : GraphqlFailureCategory.malformedResponse,
         'Response was not valid JSON: ${error.message}',
         cause: error,
       );

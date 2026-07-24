@@ -42,8 +42,9 @@ void main() {
       await tester.pump();
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
-      expect(find.text('Discard unsaved changes?'), findsOneWidget);
-      expect(find.text('Cancel'), findsOneWidget);
+      expect(find.text('Unsaved changes'), findsOneWidget);
+      expect(find.text('Stay'), findsOneWidget);
+      expect(find.text('Discard and exit'), findsOneWidget);
     },
   );
 

@@ -18,9 +18,14 @@ class GraphqlSubscriptionEvent {
 }
 
 class GraphqlSubscriptionConnection {
-  GraphqlSubscriptionConnection._(this._socket, this.events);
+  GraphqlSubscriptionConnection._(
+    this._socket,
+    this.events, {
+    this.onDisconnect,
+  });
   final WebSocket _socket;
   final Stream<GraphqlSubscriptionEvent> events;
+  final Future<void> Function()? onDisconnect;
   bool _closed = false;
 
   void stop() {
@@ -31,8 +36,21 @@ class GraphqlSubscriptionConnection {
   Future<void> disconnect() async {
     if (_closed) return;
     _closed = true;
-    await _socket.close(WebSocketStatus.normalClosure, 'Client disconnected');
+    try {
+      await _socket.close(WebSocketStatus.normalClosure, 'Client disconnected');
+    } finally {
+      await onDisconnect?.call();
+    }
   }
+
+  GraphqlSubscriptionConnection mapEvents(
+    GraphqlSubscriptionEvent Function(GraphqlSubscriptionEvent) mapper, {
+    Future<void> Function()? onDisconnect,
+  }) => GraphqlSubscriptionConnection._(
+    _socket,
+    events.map(mapper),
+    onDisconnect: onDisconnect,
+  );
 }
 
 class GraphqlSubscriptionTransport {
@@ -51,6 +69,15 @@ class GraphqlSubscriptionTransport {
     Map<String, Object?> connectionParams = const <String, Object?>{},
     Duration ackTimeout = const Duration(seconds: 5),
   }) async {
+    final uri = Uri.tryParse(endpoint);
+    if (uri == null ||
+        (uri.scheme != 'ws' && uri.scheme != 'wss') ||
+        uri.host.isEmpty) {
+      throw const GraphqlFailure(
+        GraphqlFailureCategory.validation,
+        'The GraphQL subscription endpoint must be a valid WS or WSS URL.',
+      );
+    }
     final socket = await _connector(
       endpoint,
       protocols: const <String>['graphql-transport-ws'],
@@ -106,10 +133,9 @@ class GraphqlSubscriptionTransport {
             );
           case 'error':
             controller.addError(
-              GraphqlFailure(
+              const GraphqlFailure(
                 GraphqlFailureCategory.graphql,
-                (decoded['payload'] as Map?)?['message']?.toString() ??
-                    'Subscription failed.',
+                'Subscription failed.',
               ),
             );
           case 'complete':
@@ -123,7 +149,13 @@ class GraphqlSubscriptionTransport {
             );
         }
       },
-      onError: controller.addError,
+      onError: (Object error) => controller.addError(
+        GraphqlFailure(
+          GraphqlFailureCategory.protocol,
+          'Subscription socket error.',
+          cause: error,
+        ),
+      ),
       onDone: () {
         if (!ack.isCompleted) {
           ack.completeError(

@@ -3,6 +3,7 @@ import 'package:devroute_ai_studio/core/rest/curl_codec.dart';
 import 'package:devroute_ai_studio/core/rest/request_safety_service.dart';
 import 'package:devroute_ai_studio/core/rest/token_candidate_service.dart';
 import 'package:devroute_ai_studio/core/rest/variable_resolution_service.dart';
+import 'package:devroute_ai_studio/core/security/secret_masker.dart';
 import 'package:devroute_ai_studio/shared/models/api_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -126,5 +127,18 @@ void main() {
     );
     expect(report, contains('[REDACTED]'));
     expect(report, isNot(contains('Bearer private')));
+  });
+
+  test('secret masker redacts nested secret and refresh-token JSON keys', () {
+    final value = SecretMasker.redactText(
+      '{"outer":[{"SeCrEt":"private-value","refresh_token":"refresh-value"}]}',
+    );
+    expect(value, isNot(contains('private-value')));
+    expect(value, isNot(contains('refresh-value')));
+    expect(value, contains('[REDACTED]'));
+    expect(
+      SecretMasker.redactHeaders(<String, String>{'X-Secret': 'private'}),
+      <String, String>{'X-Secret': '[REDACTED]'},
+    );
   });
 }

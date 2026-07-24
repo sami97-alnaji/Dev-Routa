@@ -14,8 +14,16 @@ enum GraphqlFailureCategory {
   malformedResponse,
   graphql,
   protocol,
+  authConflict,
   introspectionDenied,
   unknown,
+}
+
+enum GraphqlCompletionCategory {
+  success,
+  partialSuccess,
+  graphqlFailure,
+  httpFailure,
 }
 
 class GraphqlFailure implements Exception {
@@ -161,6 +169,9 @@ class GraphqlResponse {
     required this.duration,
     required this.sizeBytes,
     required this.headers,
+    this.completion = GraphqlCompletionCategory.success,
+    this.rawPreview = '',
+    this.truncated = false,
   });
   final int? statusCode;
   final Object? data;
@@ -169,11 +180,41 @@ class GraphqlResponse {
   final Duration duration;
   final int sizeBytes;
   final Map<String, String> headers;
+  final GraphqlCompletionCategory completion;
+  final String rawPreview;
+  final bool truncated;
   bool get hasPartialData => data != null && errors.isNotEmpty;
+  bool get hasGraphqlErrors => errors.isNotEmpty;
   String get safeJson => jsonEncode(<String, Object?>{
     if (data != null) 'data': data,
     if (errors.isNotEmpty)
       'errors': errors.map((item) => item.toJson()).toList(),
     if (extensions != null) 'extensions': extensions,
   });
+}
+
+/// Produces a bounded preview without splitting a UTF-8 code point.
+GraphqlPreview boundedGraphqlPreview(String value, {int maxBytes = 65536}) {
+  final bytes = utf8.encode(value);
+  if (bytes.length <= maxBytes) {
+    return GraphqlPreview(value: value, truncated: false);
+  }
+  var end = maxBytes;
+  while (end > 0) {
+    try {
+      return GraphqlPreview(
+        value: utf8.decode(bytes.sublist(0, end)),
+        truncated: true,
+      );
+    } on FormatException {
+      end--;
+    }
+  }
+  return const GraphqlPreview(value: '', truncated: true);
+}
+
+class GraphqlPreview {
+  const GraphqlPreview({required this.value, required this.truncated});
+  final String value;
+  final bool truncated;
 }

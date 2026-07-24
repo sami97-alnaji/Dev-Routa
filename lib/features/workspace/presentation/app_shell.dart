@@ -15,6 +15,12 @@ import '../../../core/security/secret_masker.dart';
 import '../../../core/storage/local_workspace_repository.dart';
 import '../../../features/realtime/presentation/realtime_screen.dart';
 import '../../../features/graphql/presentation/graphql_screen.dart';
+import '../../../features/graphql/data/graphql_repository.dart';
+import '../../../features/graphql/data/graphql_introspection_service.dart';
+import '../../../features/graphql/application/graphql_schema_cubit.dart';
+import '../../../features/graphql/presentation/graphql_workflow_cubit.dart';
+import '../../../features/graphql/application/graphql_execution_service.dart';
+import '../../../features/graphql/application/graphql_subscription_service.dart';
 import '../../../shared/models/api_models.dart';
 import '../../requests/presentation/request_workflow_cubit.dart';
 import 'workspace_cubit.dart';
@@ -34,10 +40,17 @@ class _AppShellState extends State<AppShell> {
   final Set<String> _restComparison = <String>{};
   String _responseSearch = '';
   bool _rawResponse = false;
+  GraphqlWorkflowCubit? _graphqlWorkflow;
+  String? _graphqlWorkspaceId;
+  StreamSubscription<GraphqlWorkflowState>? _graphqlStateSubscription;
+  bool _allowExit = false;
+  bool _exitDialogOpen = false;
 
   @override
   void dispose() {
     _urlController.dispose();
+    _graphqlStateSubscription?.cancel();
+    _graphqlWorkflow?.close();
     super.dispose();
   }
 
@@ -46,10 +59,16 @@ class _AppShellState extends State<AppShell> {
     final compact = MediaQuery.sizeOf(context).width < 900;
     final requestState = context.watch<RequestWorkflowCubit>().state;
     final body = Padding(padding: const EdgeInsets.all(16), child: _content());
+    final graphqlDirty = _graphqlWorkflow?.state.hasAnyDirty ?? false;
     return PopScope(
-      canPop: !requestState.hasAnyDirty,
+      canPop: _allowExit || (!requestState.hasAnyDirty && !graphqlDirty),
       onPopInvokedWithResult: (didPop, _) async {
-        if (!didPop && requestState.hasAnyDirty) await _discardAndPop();
+        if (!didPop && (requestState.hasAnyDirty || graphqlDirty)) {
+          await _guardExit(
+            restDirty: requestState.hasAnyDirty,
+            graphqlDirty: graphqlDirty,
+          );
+        }
       },
       child: Scaffold(
         appBar: compact
@@ -153,8 +172,56 @@ class _AppShellState extends State<AppShell> {
     3 => _environments(),
     4 => _settings(),
     5 => const RealtimeScreen(),
-    _ => const GraphqlScreen(),
+    _ => BlocBuilder<WorkspaceCubit, WorkspaceState>(
+      builder: (context, state) {
+        final workspaceId = state.selectedWorkspaceId;
+        if (workspaceId == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final workflow = _ensureGraphqlWorkflow(workspaceId);
+        return BlocProvider.value(
+          value: workflow,
+          child: BlocProvider(
+            create: (context) => GraphqlSubscriptionCubit(
+              context.read<GraphqlSubscriptionService>(),
+            ),
+            child: BlocProvider(
+              create: (context) => GraphqlSchemaCubit(
+                context.read<GraphqlRepository>(),
+                workspaceId: workspaceId,
+                fetcher: (request) =>
+                    context.read<GraphqlIntrospectionService>().fetch(
+                      endpoint: request.endpoint,
+                      headers: request.headers,
+                      request: request,
+                    ),
+              )..load(),
+              child: const GraphqlScreen(),
+            ),
+          ),
+        );
+      },
+    ),
   };
+
+  GraphqlWorkflowCubit _ensureGraphqlWorkflow(String workspaceId) {
+    if (_graphqlWorkflow != null && _graphqlWorkspaceId == workspaceId) {
+      return _graphqlWorkflow!;
+    }
+    _graphqlStateSubscription?.cancel();
+    _graphqlWorkflow?.close();
+    final workflow = GraphqlWorkflowCubit(
+      context.read<GraphqlRepository>(),
+      context.read<GraphqlExecutionService>(),
+      workspaceId: workspaceId,
+    )..restoreDrafts();
+    _graphqlWorkflow = workflow;
+    _graphqlWorkspaceId = workspaceId;
+    _graphqlStateSubscription = workflow.stream.listen((_) {
+      if (mounted) setState(() {});
+    });
+    return workflow;
+  }
 
   Widget _workspace() => BlocBuilder<WorkspaceCubit, WorkspaceState>(
     builder: (context, state) {
@@ -1602,17 +1669,41 @@ class _AppShellState extends State<AppShell> {
         },
       );
 
-  Future<void> _discardAndPop() async {
-    final requestCubit = context.read<RequestWorkflowCubit>();
-    if (await _confirm(
-      'Discard unsaved changes?',
-      'Drafts are stored locally, but this tab will close.',
-    )) {
-      await requestCubit.closeActive(discardChanges: true);
-      if (mounted) {
-        Navigator.of(context).maybePop();
-      }
-    }
+  Future<void> _guardExit({
+    required bool restDirty,
+    required bool graphqlDirty,
+  }) async {
+    if (_exitDialogOpen) return;
+    _exitDialogOpen = true;
+    final scope = switch ((restDirty, graphqlDirty)) {
+      (true, true) => 'REST and GraphQL',
+      (true, false) => 'REST',
+      (false, true) => 'GraphQL',
+      (false, false) => '',
+    };
+    final discard = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Unsaved changes'),
+        content: Text('There are unsaved changes in $scope.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Stay'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Discard and exit'),
+          ),
+        ],
+      ),
+    );
+    _exitDialogOpen = false;
+    if (discard != true || !mounted) return;
+    setState(() => _allowExit = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (mounted) Navigator.of(context).maybePop();
   }
 
   Future<void> _closeRequestTab() async {

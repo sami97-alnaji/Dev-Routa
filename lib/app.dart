@@ -10,6 +10,12 @@ import 'core/theme/app_theme.dart';
 import 'features/requests/presentation/request_workflow_cubit.dart';
 import 'features/realtime/data/realtime_repository.dart';
 import 'features/realtime/data/realtime_transport.dart';
+import 'features/graphql/data/graphql_repository.dart';
+import 'features/graphql/data/graphql_http_service.dart';
+import 'features/graphql/data/graphql_introspection_service.dart';
+import 'features/graphql/application/graphql_execution_service.dart';
+import 'features/graphql/application/graphql_request_resolver.dart';
+import 'features/graphql/application/graphql_subscription_service.dart';
 import 'features/realtime/presentation/realtime_session_cubit.dart';
 import 'features/workspace/presentation/app_shell.dart';
 import 'features/workspace/presentation/workspace_cubit.dart';
@@ -55,29 +61,59 @@ class DevRouteApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final secureStorage = FlutterSecureStorageService();
     final repository = LocalWorkspaceRepository(_database, secureStorage);
-    return MultiBlocProvider(
-      providers: [
-        BlocProvider(
-          create: (_) => RequestWorkflowCubit(
-            DioRequestExecutionService(secureStorage: secureStorage),
-            repository,
-          )..restoreDrafts(),
-        ),
-        BlocProvider(create: (_) => WorkspaceCubit(repository)..load()),
-        BlocProvider(
-          create: (_) => RealtimeSessionCubit(
-            RealtimeTransport(),
-            RealtimeRepository(_database),
-            secureStorage: secureStorage,
+    return RepositoryProvider<LocalWorkspaceRepository>(
+      create: (_) => repository,
+      child: MultiBlocProvider(
+        providers: [
+          BlocProvider(
+            create: (_) => RequestWorkflowCubit(
+              DioRequestExecutionService(secureStorage: secureStorage),
+              repository,
+            )..restoreDrafts(),
+          ),
+          BlocProvider(create: (_) => WorkspaceCubit(repository)..load()),
+          BlocProvider(
+            create: (_) => RealtimeSessionCubit(
+              RealtimeTransport(),
+              RealtimeRepository(_database),
+              secureStorage: secureStorage,
+            ),
+          ),
+        ],
+        child: RepositoryProvider<GraphqlRepository>(
+          create: (_) =>
+              GraphqlRepository(_database, secureStorage: secureStorage),
+          child: RepositoryProvider<GraphqlExecutionService>(
+            create: (context) => GraphqlExecutionService(
+              GraphqlHttpService(secureStorage: secureStorage),
+              context.read<GraphqlRepository>(),
+              resolver: GraphqlRequestResolver(
+                context.read<GraphqlRepository>(),
+                secureStorage: secureStorage,
+              ),
+            ),
+            child: RepositoryProvider<GraphqlIntrospectionService>(
+              create: (_) => GraphqlIntrospectionService(
+                GraphqlHttpService(secureStorage: secureStorage),
+              ),
+              child: RepositoryProvider<GraphqlSubscriptionService>(
+                create: (context) => GraphqlSubscriptionService(
+                  resolver: GraphqlRequestResolver(
+                    context.read<GraphqlRepository>(),
+                    secureStorage: secureStorage,
+                  ),
+                ),
+                child: MaterialApp.router(
+                  title: 'DevRoute AI Studio',
+                  theme: AppTheme.light,
+                  darkTheme: AppTheme.dark,
+                  themeMode: ThemeMode.dark,
+                  routerConfig: _router,
+                ),
+              ),
+            ),
           ),
         ),
-      ],
-      child: MaterialApp.router(
-        title: 'DevRoute AI Studio',
-        theme: AppTheme.light,
-        darkTheme: AppTheme.dark,
-        themeMode: ThemeMode.dark,
-        routerConfig: _router,
       ),
     );
   }

@@ -2,37 +2,30 @@
 
 Status: IN PROGRESS
 
-Audit baseline: `main` at merge commit `1b5cb583579ff6f665c77dc46e1aac29b2fb6f07`, created from PR #2. PR #2 is a Phase 4 foundation merge, not Phase 4 closure.
+## Verified baseline
 
-## Foundation inventory
+`main` remains `72f877f`. The final-closure branch is synchronized at `366d328921eadfc8c915ae0251044dad485797e0`. Preserved implementation commits include `9480968`, `5163345`, `b16b134`, `5b8535b`, `2b195c1`, `f6e7d36`, `927683b`, `503c2a8`, `dd097d1`, `16ad39b`, and `366d328`.
 
-The merged foundation contains a GraphQL route and adaptive-shell entry, a small editor, basic HTTP execution, cancellation, draft/history tables, schema version 6, initial models, and lexical parser tests. The baseline is healthy: 51 tests pass, `flutter analyze` passes, generated Drift code is current, and Dart formatting is clean.
+Verified local evidence: 75 tests passed, `flutter analyze` passed, Windows debug build passed, Android debug build passed, and Drift remains schema version 6. Endpoint validation and authentication-header conflict validation are implemented. JSON-aware history comparison remains a domain foundation; comparison UI and export are pending. No final PR, merge, closure document, or milestone exists.
 
 ## Requirement audit
 
-| Area | Classification | Evidence and gap |
+| Area | Classification | Remaining gap |
 |---|---|---|
-| GraphQL parsing | Incorrect implementation | `graphql_document_parser.dart` uses regular expressions and brace balancing. It has no maintained AST dependency, source locations, fragments, directives, variable definitions, duplicate-name validation, or anonymous-operation rules. |
-| Domain models | Partial | Operation, request, and response models exist, but response errors are untyped and there are no typed failure categories, schema, subscription, snapshot, diff, metrics, or export models. |
-| HTTP execution | Partial / security risk | POST/GET query execution and a basic GET-mutation guard exist. Variables are supplied only by the UI, auth/environment/secure-storage resolution is absent, extensions are omitted, errors are not typed, transport failures are generic, and the service constructs its own Dio without the existing execution/security architecture. |
-| Response handling | Partial | Data, errors, extensions, timing, size, and masked response headers are captured. There is no typed location/path/extension model, bounded Unicode-safe preview, raw-body/error/status/timeline UI, or complete partial-success diagnostics. |
-| Subscriptions | Missing | No `graphql-transport-ws` protocol, connection lifecycle, ack timeout, ping/pong, reconnect/resubscribe policy, event metrics, or subscription UI exists. |
-| Introspection | Missing | No explicit introspection action, schema parser, snapshot cache, retention, hash, or denial classification exists. |
-| Schema explorer/diff | Missing | No explorer, operation skeleton generation, snapshot comparison, or conservative change classification exists. |
-| Persistence | Partial | `graphql_drafts` and `graphql_history` are minimal tables. Saved-request CRUD, settings, headers/auth semantics, subscriptions, events, schema snapshots, indexes, ownership, retention, replay, and cleanup are absent. Migration coverage currently checks only table availability and sentinel rows. |
-| CRUD/drafts | Partial | A repository can save/list basic drafts, but it is not connected to collections/folders/workspaces, has no independent tab restoration/autosave/dirty protection, and does not preserve the full execution configuration. |
-| History | Partial | A sanitized summary can be inserted. Filtering, pin/tags/notes, retention, replay, comparison, safe JSON/JSONL export, and diagnostic bundles are absent. |
-| Desktop UX | Placeholder / partial | A single editor and response text panel exist. Variables are basic JSON text, headers/auth/settings/schema/history/tabs are absent, and business logic remains in the widget. |
-| Android UX | Missing | No dedicated mobile GraphQL workflow, focused screens, lifecycle handling, accessibility semantics, or GraphQL back protection tests exist. |
-| Security/diagnostics | Partial | Existing masking utilities are reused for response headers and summaries. Runtime secret resolution, auth integration, suspicious literals, typed diagnostics, cache safety, connection-parameter masking, and complete GraphQL failure taxonomy are absent. |
-| Import/export | Missing | No `.graphql`/`.gql` import, sanitized document export, GraphQL cURL workflow, response-path copy, schema export/diff, or subscription JSONL export exists. |
-| Documentation | Documentation gap | Documents 28–37 are not present. The roadmap still needs Phase 4 marked current without claiming completion. |
-| Validation/CI | Testing gap | Baseline tests/analyze pass, but Windows and Android Phase 4 builds, deterministic GraphQL HTTP/WebSocket/introspection/schema tests, CI completion, PR verification, merge verification, closure documentation, and the Phase 4 milestone are pending. |
+| GraphQL parsing | COMPLETE | AST parser and operation selection are covered. |
+| HTTP execution | PARTIAL | Central execution, environment resolution, auth references, endpoint/auth validation, typed results, HTTP/non-JSON classification, TLS enforcement, and bounded previews exist. Complete configuration editors, diagnostics and response tools remain. |
+| HTTP history | PARTIAL | Sanitized search, retention, deletion, replay, UI, and comparison domain foundation exist. Metadata filters, pin/tags/notes, exports, comparison UI, and diagnostic bundles remain. |
+| Saved requests and tabs | PARTIAL | CRUD, drafts, restoration, independent copies, dirty state, and basic UI exist. Rename/move/reorder/refresh and mixed close protection remain. |
+| Subscriptions | PARTIAL | Tab-owned service/Cubit, transport foundation, bounded timeline, and connect/disconnect exist. Secure parameters, reconnect/resubscribe, history/comparison/export and advanced lifecycle remain. |
+| Schema | PARTIAL | Introspection, hashing, snapshots, deduplication, basic diff, and skeleton generation exist. Connected Explorer, offline/retention UI, and complete diff workflows remain. |
+| Desktop UX | PARTIAL | Editor, tabs, configuration foundations, history/replay, and subscription controls exist. Focused response/comparison/schema tools, shortcuts, and close dialogs remain. |
+| Android UX | MISSING | Dedicated GraphQL mobile workflow and lifecycle/accessibility coverage remain. |
+| Import/export | MISSING | GraphQL/cURL import and sanitized document/response/history/subscription/schema/diagnostic exports remain. |
+| Security/migrations | PARTIAL | Secret references, masking, TLS enforcement, and migration basics exist. Full runtime cleanup, redaction scan, cascades, retention, and security coverage remain. |
+| Delivery | PARTIAL | Local validation passes. CI, PR, merge, closure document, and milestone remain. |
 
-## Security assessment
+## Remaining scope
 
-The current draft repository stores headers as JSON and masks them on write, which risks changing executable input and does not provide secure references. The current HTTP service has no integrated authentication or secret-resolution boundary. These are release-blocking security gaps, not documentation-only gaps.
+Implement only the PARTIAL/MISSING items above. Do not reimplement completed parser, CRUD foundation, draft tabs, centralized execution, history foundations, subscription foundations, schema persistence, or skeleton generation.
 
-## Completion gate
-
-Phase 4 must remain IN PROGRESS until AST parsing, HTTP, subscriptions, introspection/schema intelligence, complete persistence/CRUD/history, desktop/mobile workflows, security diagnostics, import/export, builds, CI, merge verification, closure documentation, and the final annotated milestone are all validated.
+Phase 4 remains IN PROGRESS until all remaining workflows are connected, persisted, secure, tested, built, accepted by CI, merged to `main`, documented, and tagged.

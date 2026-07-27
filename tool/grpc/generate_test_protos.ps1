@@ -1,13 +1,25 @@
 [CmdletBinding()]
-param()
+param(
+  [string]$ProtocPath,
+  [string]$ProtobufIncludePath,
+  [string]$DartPluginPath
+)
 
 $ErrorActionPreference = 'Stop'
 
 $toolRoot = Join-Path $env:LOCALAPPDATA 'DevRoute\toolchains\protobuf\35.0'
-$protoc = Join-Path $toolRoot 'bin\protoc.exe'
-$includePath = Join-Path $toolRoot 'include'
+$protoc = if ($ProtocPath) { $ProtocPath } else { Join-Path $toolRoot 'bin\protoc.exe' }
+$includePath = if ($ProtobufIncludePath) {
+  $ProtobufIncludePath
+} else {
+  Join-Path $toolRoot 'include'
+}
 $pubCache = if ($env:PUB_CACHE) { $env:PUB_CACHE } else { Join-Path $env:LOCALAPPDATA 'Pub\Cache' }
-$plugin = Join-Path $pubCache 'bin\protoc-gen-dart.bat'
+$plugin = if ($DartPluginPath) {
+  $DartPluginPath
+} else {
+  Join-Path $pubCache 'bin\protoc-gen-dart.bat'
+}
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $runtimeOutput = Join-Path $projectRoot 'lib\features\grpc\data\generated'
 $fixtureRoot = Join-Path $projectRoot 'test\fixtures\grpc'
@@ -17,6 +29,11 @@ if (-not (Test-Path -LiteralPath $protoc)) { throw "Missing verified protoc: $pr
 if (-not (Test-Path -LiteralPath $includePath)) { throw "Missing protoc include root: $includePath" }
 if (-not (Test-Path -LiteralPath $plugin)) { throw "Missing protoc_plugin executable: $plugin" }
 if ((& $protoc --version) -ne 'libprotoc 35.0') { throw 'Expected libprotoc 35.0.' }
+$activePackages = & dart pub global list
+if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect globally activated Dart packages.' }
+if ($activePackages -notcontains 'protoc_plugin 25.0.0') {
+  throw 'Expected globally activated protoc_plugin 25.0.0.'
+}
 
 New-Item -ItemType Directory -Force -Path $runtimeOutput, $fixtureOutput | Out-Null
 

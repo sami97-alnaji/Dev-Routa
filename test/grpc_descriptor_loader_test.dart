@@ -162,7 +162,9 @@ void main() {
         'file:///secret.proto',
         'https://example.test/secret.proto',
         r'C:\secret.proto',
+        r'C:drive-relative.proto',
         r'\\server\share\secret.proto',
+        'common/types.json',
         'null\u0000.proto',
       ]) {
         expect(
@@ -182,6 +184,48 @@ void main() {
       );
     },
   );
+
+  test('enforces descriptor byte, file, symbol, and duplicate limits', () {
+    final valid = _foundationSet();
+    final bytes = Uint8List.fromList(valid.writeToBuffer());
+    expect(
+      () => const GrpcDescriptorLoader(maximumBytes: 1).load(bytes),
+      throwsA(isA<GrpcDescriptorException>()),
+    );
+    expect(
+      () => const GrpcDescriptorLoader(maximumFiles: 1).load(bytes),
+      throwsA(isA<GrpcDescriptorException>()),
+    );
+    expect(
+      () => const GrpcDescriptorLoader(maximumSymbols: 1).load(bytes),
+      throwsA(isA<GrpcDescriptorException>()),
+    );
+
+    final duplicateSymbols = descriptor.FileDescriptorSet(
+      file: <descriptor.FileDescriptorProto>[
+        descriptor.FileDescriptorProto(
+          name: 'first.proto',
+          package: 'duplicate',
+          messageType: <descriptor.DescriptorProto>[
+            descriptor.DescriptorProto(name: 'Message'),
+          ],
+        ),
+        descriptor.FileDescriptorProto(
+          name: 'second.proto',
+          package: 'duplicate',
+          messageType: <descriptor.DescriptorProto>[
+            descriptor.DescriptorProto(name: 'Message'),
+          ],
+        ),
+      ],
+    );
+    expect(
+      () => const GrpcDescriptorLoader().load(
+        Uint8List.fromList(duplicateSymbols.writeToBuffer()),
+      ),
+      throwsA(isA<GrpcDescriptorException>()),
+    );
+  });
 
   test(
     'dynamic validation rejects unknown and mistyped values with a field path',

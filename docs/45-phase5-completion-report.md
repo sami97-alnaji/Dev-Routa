@@ -21,9 +21,27 @@ test-only service stubs under `test/fixtures/grpc/generated/`.
 
 The batch adds bounded descriptor loading/indexing, safe proto import policy,
 descriptor-backed JSON validation, and focused regression coverage. Its gates
-pass: `flutter analyze`, 130 tests, Windows debug build, Android debug build,
-and `git diff --check`. No transport, reflection, schema 7, persistence, or UI
-is claimed implemented.
+pass in the current combined verification: `flutter analyze`, 141 tests,
+Windows debug build, Android debug build, and `git diff --check`. No reflection,
+schema 7, persistence, or UI is claimed implemented.
+
+## Unary transport batch
+
+The native unary transport invokes descriptor-selected method paths with raw
+Protobuf bytes and supports metadata, deadlines, cancellation, response headers,
+trailers, and structured gRPC failures. Metadata and failure text are sanitized
+before they leave the transport boundary.
+
+Deterministic loopback coverage verifies successful descriptor-selected
+invocation, status mapping, deadline expiry, cancellation, request metadata,
+response metadata redaction, reflected runtime-secret masking, concurrent-call
+isolation, endpoint validation, explicit plaintext opt-in, lifecycle cleanup,
+and rejection of streaming descriptors. The descriptor and unary focused suite
+passes 18 tests. The complete suite passes 141 tests, `flutter analyze` reports
+no issues, both debug platform builds succeed, repeated Protobuf generation is
+identical, and `git diff --check` reports no whitespace errors. Reflection,
+streaming, the dynamic binary codec, schema 7, persistence, and UI remain in
+progress.
 
 This report must remain `IN PROGRESS` until implementation, CI, merged-main
 verification, repository closure documentation, and the new annotated

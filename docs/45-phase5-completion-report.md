@@ -43,6 +43,33 @@ identical, and `git diff --check` reports no whitespace errors. Reflection,
 streaming, the dynamic binary codec, schema 7, persistence, and UI remain in
 progress.
 
+## Dynamic codec, explicit reflection, and streaming batch
+
+The descriptor-driven codec encodes and decodes scalar, enum, nested, repeated
+packed, map, oneof, optional, proto2-required, and supported well-known values.
+It applies deterministic field/map ordering, canonical base64 and 64-bit decimal
+string policies, unknown-field skipping, malformed-wire failures, and bounded
+bytes, recursion, repeated items, and decoded fields.
+
+Explicit server discovery uses generated official stable
+`grpc.reflection.v1` types. It lists services, resolves symbol descriptors and
+dependencies recursively, deduplicates canonical files, rejects conflicts,
+enforces operation limits, maps disabled/auth/deadline/cancellation outcomes,
+sanitizes diagnostics, and releases runtime secrets.
+
+The shared raw transport implements server, client, and bidirectional streaming
+with descriptor-selected paths, ordered events, headers/trailers/status,
+deadline, cancellation, client half-close, session-generation invalidation,
+bounded outbound queues and retained timelines, concurrent isolation, and
+terminal cleanup. The application layer validates/encodes every sent message and
+decodes/sanitizes every received message while retaining bounded raw bytes.
+
+The gRPC-focused suite passes 45 tests and the complete suite passes 168 tests.
+Generation is identical across two consecutive runs, `flutter analyze` reports
+no issues, Windows and Android debug builds succeed, and `git diff --check`
+reports no whitespace errors. Schema 7, descriptor-cache persistence, drafts,
+saved requests, history, and UI have not started.
+
 This report must remain `IN PROGRESS` until implementation, CI, merged-main
 verification, repository closure documentation, and the new annotated
 `v0.5.0-alpha.1` milestone have all succeeded.

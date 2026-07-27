@@ -9,3 +9,29 @@
 // ignore_for_file: curly_braces_in_flow_control_structures
 // ignore_for_file: deprecated_member_use_from_same_package, library_prefixes
 // ignore_for_file: non_constant_identifier_names, prefer_relative_imports
+
+import 'dart:core' as $core;
+
+import 'package:protobuf/protobuf.dart' as $pb;
+
+class TestMode extends $pb.ProtobufEnum {
+  static const TestMode TEST_MODE_UNSPECIFIED =
+      TestMode._(0, _omitEnumNames ? '' : 'TEST_MODE_UNSPECIFIED');
+  static const TestMode TEST_MODE_ACTIVE =
+      TestMode._(1, _omitEnumNames ? '' : 'TEST_MODE_ACTIVE');
+
+  static const $core.List<TestMode> values = <TestMode>[
+    TEST_MODE_UNSPECIFIED,
+    TEST_MODE_ACTIVE,
+  ];
+
+  static final $core.List<TestMode?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 1);
+  static TestMode? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const TestMode._(super.value, super.name);
+}
+
+const $core.bool _omitEnumNames =
+    $core.bool.fromEnvironment('protobuf.omit_enum_names');

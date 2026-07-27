@@ -7,8 +7,8 @@ resolved connection configuration, a bounded event buffer, and one terminal
 state. Supported modes are unary, server streaming, client streaming, and
 bidirectional streaming.
 
-`start`, `send`, `complete client stream`, `cancel`, and `disconnect` are Cubit
-commands delegated to the application service. The adapter records sequence,
+`start`, `send`, `complete client stream`, `cancel`, and `disconnect` are
+application-service operations. The adapter records sequence,
 timestamp, direction, byte size, status, status text, initial metadata, and
 trailers. It caps event count and retained bytes and reports dropped-event
 count. It never retries or reconnects silently.

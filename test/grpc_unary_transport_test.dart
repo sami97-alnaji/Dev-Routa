@@ -301,4 +301,18 @@ class _LoopbackService extends Phase5TestServiceBase {
     final total = request.samples.fold<int>(0, (sum, value) => sum + value);
     return EchoResponse(message: '${request.message}:$total');
   }
+
+  @override
+  Stream<EchoResponse> watch(ServiceCall call, EchoRequest request) =>
+      const Stream<EchoResponse>.empty();
+
+  @override
+  Future<EchoResponse> collect(
+    ServiceCall call,
+    Stream<EchoRequest> request,
+  ) async => EchoResponse();
+
+  @override
+  Stream<EchoResponse> chat(ServiceCall call, Stream<EchoRequest> request) =>
+      const Stream<EchoResponse>.empty();
 }

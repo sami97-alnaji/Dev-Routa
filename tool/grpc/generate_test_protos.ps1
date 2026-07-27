@@ -22,6 +22,8 @@ $plugin = if ($DartPluginPath) {
 }
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $runtimeOutput = Join-Path $projectRoot 'lib\features\grpc\data\generated'
+$reflectionRoot = Join-Path $projectRoot 'tool\grpc\protos'
+$reflectionOutput = Join-Path $runtimeOutput 'reflection'
 $fixtureRoot = Join-Path $projectRoot 'test\fixtures\grpc'
 $fixtureOutput = Join-Path $fixtureRoot 'generated'
 
@@ -35,7 +37,7 @@ if ($activePackages -notcontains 'protoc_plugin 25.0.0') {
   throw 'Expected globally activated protoc_plugin 25.0.0.'
 }
 
-New-Item -ItemType Directory -Force -Path $runtimeOutput, $fixtureOutput | Out-Null
+New-Item -ItemType Directory -Force -Path $runtimeOutput, $reflectionOutput, $fixtureOutput | Out-Null
 
 $descriptorArguments = @(
   "--plugin=protoc-gen-dart=$plugin",
@@ -46,14 +48,34 @@ $descriptorArguments = @(
 & $protoc @descriptorArguments
 if ($LASTEXITCODE -ne 0) { throw 'Descriptor generation failed.' }
 
+$reflectionArguments = @(
+  "--plugin=protoc-gen-dart=$plugin",
+  "--proto_path=$reflectionRoot",
+  "--dart_out=grpc:$reflectionOutput",
+  (Join-Path $reflectionRoot 'grpc\reflection\v1\reflection.proto')
+)
+& $protoc @reflectionArguments
+if ($LASTEXITCODE -ne 0) { throw 'Reflection generation failed.' }
+
 $fixtureArguments = @(
   "--plugin=protoc-gen-dart=$plugin",
   "--proto_path=$fixtureRoot",
+  "--proto_path=$includePath",
   "--dart_out=grpc:$fixtureOutput",
   (Join-Path $fixtureRoot 'phase5_test_service.proto')
 )
 & $protoc @fixtureArguments
 if ($LASTEXITCODE -ne 0) { throw 'Fixture generation failed.' }
+
+$fixtureDescriptorArguments = @(
+  "--proto_path=$fixtureRoot",
+  "--proto_path=$includePath",
+  '--include_imports',
+  "--descriptor_set_out=$(Join-Path $fixtureOutput 'phase5_test_service.protoset')",
+  (Join-Path $fixtureRoot 'phase5_test_service.proto')
+)
+& $protoc @fixtureDescriptorArguments
+if ($LASTEXITCODE -ne 0) { throw 'Fixture descriptor generation failed.' }
 
 $descriptorFile = Join-Path $runtimeOutput 'google\protobuf\descriptor.pb.dart'
 $source = [System.IO.File]::ReadAllText($descriptorFile)

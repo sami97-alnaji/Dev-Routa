@@ -114,7 +114,7 @@ class GrpcDynamicMessageValidator {
       if (pair.key is! String) {
         _fail('Map keys must be strings.', valuePath);
       }
-      _validateField(keyField, pair.key, '$valuePath.${pair.key}');
+      _validateMapKey(keyField, pair.key, '$valuePath.${pair.key}');
       result[pair.key] = _validateField(
         valueField,
         pair.value,
@@ -122,6 +122,34 @@ class GrpcDynamicMessageValidator {
       );
     }
     return result;
+  }
+
+  void _validateMapKey(
+    GrpcFieldDescriptor field,
+    String value,
+    String valuePath,
+  ) {
+    switch (field.type) {
+      case 'TYPE_STRING':
+        return;
+      case 'TYPE_BOOL':
+        if (value == 'true' || value == 'false') return;
+        _fail('Expected a canonical boolean map key.', valuePath);
+      case 'TYPE_INT32':
+      case 'TYPE_SINT32':
+      case 'TYPE_SFIXED32':
+      case 'TYPE_UINT32':
+      case 'TYPE_FIXED32':
+      case 'TYPE_INT64':
+      case 'TYPE_SINT64':
+      case 'TYPE_SFIXED64':
+      case 'TYPE_UINT64':
+      case 'TYPE_FIXED64':
+        _validateField(field, value, valuePath);
+        return;
+      default:
+        _fail('Invalid Protobuf map key type.', valuePath);
+    }
   }
 
   Object? _validateField(
@@ -192,9 +220,14 @@ class GrpcDynamicMessageValidator {
     String maximum,
     String path,
   ) {
-    if (value is! int ||
-        BigInt.from(value) < BigInt.parse(minimum) ||
-        BigInt.from(value) > BigInt.parse(maximum)) {
+    final integer = value is int
+        ? BigInt.from(value)
+        : value is String && RegExp(r'^-?(0|[1-9]\d*)$').hasMatch(value)
+        ? BigInt.parse(value)
+        : null;
+    if (integer == null ||
+        integer < BigInt.parse(minimum) ||
+        integer > BigInt.parse(maximum)) {
       _fail('Integer is outside the allowed range.', path);
     }
   }

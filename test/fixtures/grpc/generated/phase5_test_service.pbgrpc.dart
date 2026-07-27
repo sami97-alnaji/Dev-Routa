@@ -39,10 +39,44 @@ class Phase5TestServiceClient extends $grpc.Client {
     return $createUnaryCall(_$echo, request, options: options);
   }
 
+  $grpc.ResponseStream<$0.EchoResponse> watch(
+    $0.EchoRequest request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createStreamingCall(_$watch, $async.Stream.fromIterable([request]),
+        options: options);
+  }
+
+  $grpc.ResponseFuture<$0.EchoResponse> collect(
+    $async.Stream<$0.EchoRequest> request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createStreamingCall(_$collect, request, options: options).single;
+  }
+
+  $grpc.ResponseStream<$0.EchoResponse> chat(
+    $async.Stream<$0.EchoRequest> request, {
+    $grpc.CallOptions? options,
+  }) {
+    return $createStreamingCall(_$chat, request, options: options);
+  }
+
   // method descriptors
 
   static final _$echo = $grpc.ClientMethod<$0.EchoRequest, $0.EchoResponse>(
       '/devroute.phase5.test.Phase5TestService/Echo',
+      ($0.EchoRequest value) => value.writeToBuffer(),
+      $0.EchoResponse.fromBuffer);
+  static final _$watch = $grpc.ClientMethod<$0.EchoRequest, $0.EchoResponse>(
+      '/devroute.phase5.test.Phase5TestService/Watch',
+      ($0.EchoRequest value) => value.writeToBuffer(),
+      $0.EchoResponse.fromBuffer);
+  static final _$collect = $grpc.ClientMethod<$0.EchoRequest, $0.EchoResponse>(
+      '/devroute.phase5.test.Phase5TestService/Collect',
+      ($0.EchoRequest value) => value.writeToBuffer(),
+      $0.EchoResponse.fromBuffer);
+  static final _$chat = $grpc.ClientMethod<$0.EchoRequest, $0.EchoResponse>(
+      '/devroute.phase5.test.Phase5TestService/Chat',
       ($0.EchoRequest value) => value.writeToBuffer(),
       $0.EchoResponse.fromBuffer);
 }
@@ -59,6 +93,27 @@ abstract class Phase5TestServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $0.EchoRequest.fromBuffer(value),
         ($0.EchoResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.EchoRequest, $0.EchoResponse>(
+        'Watch',
+        watch_Pre,
+        false,
+        true,
+        ($core.List<$core.int> value) => $0.EchoRequest.fromBuffer(value),
+        ($0.EchoResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.EchoRequest, $0.EchoResponse>(
+        'Collect',
+        collect,
+        true,
+        false,
+        ($core.List<$core.int> value) => $0.EchoRequest.fromBuffer(value),
+        ($0.EchoResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.EchoRequest, $0.EchoResponse>(
+        'Chat',
+        chat,
+        true,
+        true,
+        ($core.List<$core.int> value) => $0.EchoRequest.fromBuffer(value),
+        ($0.EchoResponse value) => value.writeToBuffer()));
   }
 
   $async.Future<$0.EchoResponse> echo_Pre(
@@ -68,4 +123,18 @@ abstract class Phase5TestServiceBase extends $grpc.Service {
 
   $async.Future<$0.EchoResponse> echo(
       $grpc.ServiceCall call, $0.EchoRequest request);
+
+  $async.Stream<$0.EchoResponse> watch_Pre(
+      $grpc.ServiceCall $call, $async.Future<$0.EchoRequest> $request) async* {
+    yield* watch($call, await $request);
+  }
+
+  $async.Stream<$0.EchoResponse> watch(
+      $grpc.ServiceCall call, $0.EchoRequest request);
+
+  $async.Future<$0.EchoResponse> collect(
+      $grpc.ServiceCall call, $async.Stream<$0.EchoRequest> request);
+
+  $async.Stream<$0.EchoResponse> chat(
+      $grpc.ServiceCall call, $async.Stream<$0.EchoRequest> request);
 }

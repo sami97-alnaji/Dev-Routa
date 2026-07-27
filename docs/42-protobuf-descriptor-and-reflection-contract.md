@@ -22,6 +22,12 @@ the file descriptors needed for those services. Disabled, unauthenticated, and
 unsupported reflection results are clear terminal states with manual import as
 the fallback. Cached reflection results remain browseable offline.
 
+The implemented explicit operation uses the stable `grpc.reflection.v1`
+bidirectional protocol, bounded service/response/file/byte/dependency limits,
+canonical filename ordering, content conflict detection, typed failures,
+deadline, and cancellation. Persistence of successful snapshots remains in the
+next schema-7 slice.
+
 JSON-style input is validated against descriptors before wire encoding. It
 handles scalars, enums, nested messages, repeated fields, maps, oneofs, bytes,
 and supported well-known timestamp values; unknown fields and type mismatches

@@ -2,8 +2,19 @@ syntax = "proto3";
 
 package devroute.phase5.test;
 
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
 service Phase5TestService {
   rpc Echo(EchoRequest) returns (EchoResponse);
+  rpc Watch(EchoRequest) returns (stream EchoResponse);
+  rpc Collect(stream EchoRequest) returns (EchoResponse);
+  rpc Chat(stream EchoRequest) returns (stream EchoResponse);
 }
 
 message EchoRequest {
@@ -13,4 +24,57 @@ message EchoRequest {
 
 message EchoResponse {
   string message = 1;
+}
+
+enum TestMode {
+  TEST_MODE_UNSPECIFIED = 0;
+  TEST_MODE_ACTIVE = 1;
+}
+
+message NestedValue {
+  string name = 1;
+}
+
+message CodecMessage {
+  double double_value = 1;
+  float float_value = 2;
+  int32 int32_value = 3;
+  int64 int64_value = 4;
+  uint32 uint32_value = 5;
+  uint64 uint64_value = 6;
+  sint32 sint32_value = 7;
+  sint64 sint64_value = 8;
+  fixed32 fixed32_value = 9;
+  fixed64 fixed64_value = 10;
+  sfixed32 sfixed32_value = 11;
+  sfixed64 sfixed64_value = 12;
+  bool bool_value = 13;
+  string string_value = 14;
+  bytes bytes_value = 15;
+  TestMode mode = 16;
+  NestedValue nested = 17;
+  repeated int32 packed_values = 18;
+  map<string, int32> labels = 19;
+  oneof selection {
+    string first = 20;
+    int32 second = 21;
+  }
+  repeated string reflected_values = 22;
+  map<string, string> reflected_labels = 23;
+  map<int32, string> numeric_labels = 24;
+  map<bool, string> boolean_labels = 25;
+}
+
+message WellKnownMessage {
+  google.protobuf.Timestamp timestamp = 1;
+  google.protobuf.Duration duration = 2;
+  google.protobuf.Empty empty = 3;
+  google.protobuf.Struct struct_value = 4;
+  google.protobuf.Value value = 5;
+  google.protobuf.ListValue list_value = 6;
+  google.protobuf.FieldMask field_mask = 7;
+  google.protobuf.StringValue string_wrapper = 8;
+  google.protobuf.Int64Value int64_wrapper = 9;
+  google.protobuf.BoolValue bool_wrapper = 10;
+  google.protobuf.Any any_value = 11;
 }

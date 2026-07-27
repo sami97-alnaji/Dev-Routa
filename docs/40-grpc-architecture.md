@@ -10,7 +10,7 @@ gRPC presentation -> Cubit -> application service -> resolver/validator
   -> sanitized repository/history -> Drift
 ```
 
-The adapter will use the official native `grpc` package only. A channel is
+The adapter uses the official native `grpc` package only. A channel is
 created after environment and secure references resolve, receives a deadline and
 cancellation owner, and is shut down on completion, cancellation, replacement,
 or Cubit disposal. Presentation receives immutable state and never owns a
@@ -20,6 +20,13 @@ Descriptor sources are: explicit user `.proto` import compiled with verified
 `protoc`, explicitly requested server reflection, and cached snapshots. A
 snapshot contains descriptors and hashes only; it never contains metadata,
 tokens, certificates, or runtime values. Reflection is not automatic.
+
+The explicit reflection operation uses `grpc.reflection.v1`, recursively
+resolves dependencies, rejects conflicts, and returns a bounded deterministic
+descriptor snapshot. The dynamic codec validates immutable JSON-like input
+before deterministic wire encoding and decodes bounded wire messages without
+generated application types. The application invocation layer composes that
+codec above the raw unary and streaming transports.
 
 TLS is the default. Plaintext is a labelled opt-in. Custom trust material and
 mTLS key material are secure references resolved only at channel construction;

@@ -26,5 +26,6 @@ Status: IN PROGRESS
    merge, closure document, and annotated alpha tag.
 
 The protocol and persistence foundations have passed their focused local gates.
-The next implementation slice is the Windows and Android gRPC UI composition;
-Phase 5 remains in progress.
+The current slice is Subscription Agent Control Foundation; official-client
+adapters follow in a separate slice, then gRPC Windows/Android UI composition,
+then CI/merge/tag closure. Phase 5 remains in progress.

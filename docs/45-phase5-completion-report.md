@@ -116,3 +116,12 @@ workflow and does not block this Phase 5 foundation.
 This report must remain `IN PROGRESS` until UI integration, CI, merged-main
 verification, repository closure documentation, and the next annotated
 milestone have all succeeded.
+
+## Phase 5A subscription agent control foundation
+
+This current foundation adds only typed command, tool, permission, approval,
+audit, automation-validation, and fake subscription-agent contracts. It has no
+UI, real provider adapter, login, credential access, external process, network
+execution, schema migration, or gRPC UI work. Future client integrations must
+use `SubscriptionAgentAdapter` and `AgentOrchestrator`; the legacy
+`ExternalAiProvider` remains an analysis-only boundary with consent previews.

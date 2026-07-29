@@ -130,11 +130,16 @@ void main() {
   test(
     'server stream maps deadline and cancellation without late events',
     () async {
-      final deadline = transport.startServerStreaming(
+      final harness = await _StreamingFixtureHarness.start();
+      addTearDown(harness.close);
+
+      final deadlineGate = harness.service.gateFor('deadline-blocked');
+      final deadline = harness.deadlineTransport.startServerStreaming(
         method: _watchMethod,
-        requestBytes: EchoRequest(message: 'blocked').writeToBuffer(),
-        deadline: const Duration(milliseconds: 40),
+        requestBytes: EchoRequest(message: 'deadline-blocked').writeToBuffer(),
+        deadline: const Duration(milliseconds: 200),
       );
+      await deadlineGate.started.future.timeout(const Duration(seconds: 2));
       await expectLater(
         deadline.result,
         throwsA(
@@ -146,20 +151,40 @@ void main() {
         ),
       );
 
-      final cancelled = transport.startServerStreaming(
-        method: _watchMethod,
-        requestBytes: EchoRequest(message: 'blocked').writeToBuffer(),
-      );
-      await service.blockedStarted.future;
-      await cancelled.cancel();
-      await expectLater(
-        cancelled.result,
-        throwsA(isA<GrpcStreamingException>()),
-      );
-      final count = cancelled.timeline.length;
-      service.releaseBlocked();
+      final deadlineTerminalCount = deadline.timeline.length;
+      deadlineGate.unblock();
+      await deadlineGate.finished.future.timeout(const Duration(seconds: 2));
       await Future<void>.delayed(Duration.zero);
-      expect(cancelled.timeline.length, count);
+      expect(deadline.timeline.length, deadlineTerminalCount);
+      await deadline.close();
+
+      final cancellationGate = harness.service.gateFor('cancel-blocked');
+      final cancelled = harness.cancellationTransport.startServerStreaming(
+        method: _watchMethod,
+        requestBytes: EchoRequest(message: 'cancel-blocked').writeToBuffer(),
+      );
+      await cancellationGate.started.future.timeout(const Duration(seconds: 2));
+
+      final resultExpectation = expectLater(
+        cancelled.result,
+        throwsA(
+          isA<GrpcStreamingException>().having(
+            (error) => error.statusCode,
+            'status',
+            StatusCode.cancelled,
+          ),
+        ),
+      );
+      final cancellation = cancelled.cancel();
+      cancellationGate.unblock();
+      await cancellation.timeout(const Duration(seconds: 2));
+      await resultExpectation;
+      final cancellationTerminalCount = cancelled.timeline.length;
+      await cancellationGate.finished.future.timeout(
+        const Duration(seconds: 2),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(cancelled.timeline.length, cancellationTerminalCount);
     },
   );
 
@@ -506,13 +531,26 @@ const _chatMethod = GrpcMethodDescriptor(
 );
 
 class _StreamingFixtureService extends Phase5TestServiceBase {
-  Completer<void> blockedStarted = Completer<void>();
-  Completer<void> _blockedRelease = Completer<void>();
+  final Map<String, _BlockedWatchGate> _blockedCalls =
+      <String, _BlockedWatchGate>{};
 
-  void releaseBlocked() {
-    if (!_blockedRelease.isCompleted) _blockedRelease.complete();
-    blockedStarted = Completer<void>();
-    _blockedRelease = Completer<void>();
+  _BlockedWatchGate gateFor(String message) =>
+      _blockedCalls.putIfAbsent(message, _BlockedWatchGate.new);
+
+  Iterable<_BlockedWatchGate> get blockedGates => _blockedCalls.values;
+
+  Future<void> unblockAndWaitForHandlers() async {
+    final gates = blockedGates.toList(growable: false);
+    for (final gate in gates) {
+      gate.unblock();
+    }
+    await Future.wait(
+      gates
+          .where((gate) => gate.started.isCompleted)
+          .map(
+            (gate) => gate.finished.future.timeout(const Duration(seconds: 2)),
+          ),
+    );
   }
 
   @override
@@ -521,10 +559,15 @@ class _StreamingFixtureService extends Phase5TestServiceBase {
 
   @override
   Stream<EchoResponse> watch(ServiceCall call, EchoRequest request) async* {
-    if (request.message == 'blocked') {
-      if (!blockedStarted.isCompleted) blockedStarted.complete();
-      await _blockedRelease.future;
-      yield EchoResponse(message: 'released');
+    if (request.message == 'deadline-blocked' ||
+        request.message == 'cancel-blocked') {
+      final gate = gateFor(request.message);
+      try {
+        if (!gate.started.isCompleted) gate.started.complete();
+        await gate.release.future;
+      } finally {
+        if (!gate.finished.isCompleted) gate.finished.complete();
+      }
       return;
     }
     if (request.message == 'partial-error') {
@@ -579,5 +622,65 @@ class _StreamingFixtureService extends Phase5TestServiceBase {
       yield EchoResponse(message: 'echo:${item.message}');
     }
     yield EchoResponse(message: 'after-half-close');
+  }
+}
+
+class _BlockedWatchGate {
+  final Completer<void> started = Completer<void>();
+  final Completer<void> release = Completer<void>();
+  final Completer<void> finished = Completer<void>();
+
+  void unblock() {
+    if (!release.isCompleted) release.complete();
+  }
+}
+
+class _StreamingFixtureHarness {
+  _StreamingFixtureHarness._(
+    this.server,
+    this.service,
+    this.deadlineTransport,
+    this.cancellationTransport,
+  );
+
+  final Server server;
+  final _StreamingFixtureService service;
+  final GrpcStreamingTransport deadlineTransport;
+  final GrpcStreamingTransport cancellationTransport;
+  Future<void>? _closeFuture;
+
+  static Future<_StreamingFixtureHarness> start() async {
+    final service = _StreamingFixtureService();
+    final server = Server.create(services: <Service>[service]);
+    await server.serve(
+      address: InternetAddress.loopbackIPv4,
+      port: 0,
+      security: ServerLocalCredentials(),
+    );
+    final deadlineTransport = GrpcStreamingTransport.connect(
+      host: InternetAddress.loopbackIPv4.address,
+      port: server.port!,
+      allowPlaintext: true,
+    );
+    final cancellationTransport = GrpcStreamingTransport.connect(
+      host: InternetAddress.loopbackIPv4.address,
+      port: server.port!,
+      allowPlaintext: true,
+    );
+    return _StreamingFixtureHarness._(
+      server,
+      service,
+      deadlineTransport,
+      cancellationTransport,
+    );
+  }
+
+  Future<void> close() => _closeFuture ??= _close();
+
+  Future<void> _close() async {
+    await service.unblockAndWaitForHandlers();
+    await deadlineTransport.shutdown();
+    await cancellationTransport.shutdown();
+    await server.shutdown();
   }
 }

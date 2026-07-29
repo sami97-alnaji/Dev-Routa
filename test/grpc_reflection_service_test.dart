@@ -117,17 +117,16 @@ void main() {
   });
 
   test('maps deadline and explicit cancellation', () async {
-    final deadlineFixture = _ReflectionFixture(fixtureSet, block: true);
-    final deadlineServer = await _serve(deadlineFixture);
-    final deadlineService = _connect(deadlineServer);
-    addTearDown(() async {
-      await deadlineService.shutdown();
-      await deadlineServer.shutdown();
-    });
+    final deadlineHarness = await _ReflectionHarness.blocking(fixtureSet);
+    addTearDown(deadlineHarness.close);
+    final deadlineOperation = deadlineHarness.client.discover(
+      deadline: const Duration(milliseconds: 200),
+    );
+    await deadlineHarness.fixture.started.future.timeout(
+      const Duration(seconds: 2),
+    );
     await expectLater(
-      deadlineService
-          .discover(deadline: const Duration(milliseconds: 40))
-          .result,
+      deadlineOperation.result,
       throwsA(
         isA<GrpcReflectionException>().having(
           (error) => error.category,
@@ -136,19 +135,18 @@ void main() {
         ),
       ),
     );
-    deadlineFixture.release();
-    await deadlineService.shutdown();
-    await deadlineServer.shutdown();
+    deadlineHarness.fixture.release();
+    await deadlineHarness.fixture.finished.future.timeout(
+      const Duration(seconds: 2),
+    );
+    await deadlineHarness.close();
 
-    final cancellationFixture = _ReflectionFixture(fixtureSet, block: true);
-    final cancellationServer = await _serve(cancellationFixture);
-    final cancellationService = _connect(cancellationServer);
-    addTearDown(() async {
-      await cancellationService.shutdown();
-      await cancellationServer.shutdown();
-    });
-    final operation = cancellationService.discover();
-    await cancellationFixture.started.future;
+    final cancellationHarness = await _ReflectionHarness.blocking(fixtureSet);
+    addTearDown(cancellationHarness.close);
+    final operation = cancellationHarness.client.discover();
+    await cancellationHarness.fixture.started.future.timeout(
+      const Duration(seconds: 2),
+    );
     final cancellationExpectation = expectLater(
       operation.result,
       throwsA(
@@ -160,8 +158,42 @@ void main() {
       ),
     );
     await operation.cancel();
-    cancellationFixture.release();
+    cancellationHarness.fixture.release();
     await cancellationExpectation;
+    await cancellationHarness.fixture.finished.future.timeout(
+      const Duration(seconds: 2),
+    );
+    await cancellationHarness.close();
+
+    await deadlineHarness.close();
+    await cancellationHarness.close();
+    expect(deadlineHarness.clientCloseCount, 1);
+    expect(deadlineHarness.serverCloseCount, 1);
+    expect(cancellationHarness.clientCloseCount, 1);
+    expect(cancellationHarness.serverCloseCount, 1);
+
+    final laterHarness = await _ReflectionHarness.blocking(fixtureSet);
+    addTearDown(laterHarness.close);
+    final laterOperation = laterHarness.client.discover();
+    await laterHarness.fixture.started.future.timeout(
+      const Duration(seconds: 2),
+    );
+    final laterExpectation = expectLater(
+      laterOperation.result,
+      throwsA(
+        isA<GrpcReflectionException>().having(
+          (error) => error.category,
+          'cancelled',
+          GrpcReflectionFailureCategory.cancelled,
+        ),
+      ),
+    );
+    await laterOperation.cancel();
+    laterHarness.fixture.release();
+    await laterExpectation;
+    await laterHarness.fixture.finished.future.timeout(
+      const Duration(seconds: 2),
+    );
   });
 
   test(
@@ -235,6 +267,46 @@ GrpcReflectionService _connect(Server server) => GrpcReflectionService.connect(
   allowPlaintext: true,
 );
 
+class _ReflectionHarness {
+  _ReflectionHarness({
+    required this.server,
+    required this.client,
+    required this.fixture,
+  });
+
+  static Future<_ReflectionHarness> blocking(
+    descriptor.FileDescriptorSet set,
+  ) async {
+    final fixture = _ReflectionFixture(set, block: true);
+    final server = await _serve(fixture);
+    return _ReflectionHarness(
+      server: server,
+      client: _connect(server),
+      fixture: fixture,
+    );
+  }
+
+  final Server server;
+  final GrpcReflectionService client;
+  final _ReflectionFixture fixture;
+
+  bool _closed = false;
+  int clientCloseCount = 0;
+  int serverCloseCount = 0;
+
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+
+    fixture.release();
+    await fixture.finished.future.timeout(const Duration(seconds: 2));
+    clientCloseCount++;
+    await client.shutdown();
+    serverCloseCount++;
+    await server.shutdown();
+  }
+}
+
 class _ReflectionFixture extends reflection_grpc.ServerReflectionServiceBase {
   _ReflectionFixture(
     descriptor.FileDescriptorSet set, {
@@ -251,6 +323,7 @@ class _ReflectionFixture extends reflection_grpc.ServerReflectionServiceBase {
   final bool conflict;
   final List<String> filenameRequests = <String>[];
   final Completer<void> started = Completer<void>();
+  final Completer<void> finished = Completer<void>();
   final Completer<void> _release = Completer<void>();
 
   void release() {
@@ -262,71 +335,76 @@ class _ReflectionFixture extends reflection_grpc.ServerReflectionServiceBase {
     ServiceCall call,
     Stream<reflection.ServerReflectionRequest> request,
   ) async* {
-    await for (final item in request) {
-      if (!started.isCompleted) started.complete();
-      if (block) {
-        await _release.future;
-        if (call.isCanceled) return;
-      }
-      if (protocolError != null) {
-        yield reflection.ServerReflectionResponse(
-          originalRequest: item,
-          errorResponse: protocolError,
-        );
-        continue;
-      }
-      if (item.hasListServices()) {
-        yield reflection.ServerReflectionResponse(
-          originalRequest: item,
-          listServicesResponse: reflection.ListServiceResponse(
-            service: <reflection.ServiceResponse>[
-              reflection.ServiceResponse(
-                name: 'grpc.reflection.v1.ServerReflection',
-              ),
-              reflection.ServiceResponse(
-                name: 'devroute.phase5.test.Phase5TestService',
-              ),
-            ],
-          ),
-        );
-        continue;
-      }
-      if (item.hasFileContainingSymbol()) {
-        final main = _files['phase5_test_service.proto']!;
-        final payloads = <List<int>>[main.writeToBuffer()];
-        if (conflict) {
-          payloads.add(
-            (main.deepCopy()..package = 'conflicting.package').writeToBuffer(),
-          );
+    try {
+      await for (final item in request) {
+        if (!started.isCompleted) started.complete();
+        if (block) {
+          await _release.future;
+          return;
         }
-        yield reflection.ServerReflectionResponse(
-          originalRequest: item,
-          fileDescriptorResponse: reflection.FileDescriptorResponse(
-            fileDescriptorProto: payloads,
-          ),
-        );
-        continue;
-      }
-      if (item.hasFileByFilename()) {
-        filenameRequests.add(item.fileByFilename);
-        final file = _files[item.fileByFilename];
-        if (file == null) {
+        if (protocolError != null) {
           yield reflection.ServerReflectionResponse(
             originalRequest: item,
-            errorResponse: reflection.ErrorResponse(
-              errorCode: StatusCode.notFound,
-              errorMessage: 'missing descriptor',
+            errorResponse: protocolError,
+          );
+          continue;
+        }
+        if (item.hasListServices()) {
+          yield reflection.ServerReflectionResponse(
+            originalRequest: item,
+            listServicesResponse: reflection.ListServiceResponse(
+              service: <reflection.ServiceResponse>[
+                reflection.ServiceResponse(
+                  name: 'grpc.reflection.v1.ServerReflection',
+                ),
+                reflection.ServiceResponse(
+                  name: 'devroute.phase5.test.Phase5TestService',
+                ),
+              ],
             ),
           );
-        } else {
+          continue;
+        }
+        if (item.hasFileContainingSymbol()) {
+          final main = _files['phase5_test_service.proto']!;
+          final payloads = <List<int>>[main.writeToBuffer()];
+          if (conflict) {
+            payloads.add(
+              (main.deepCopy()..package = 'conflicting.package')
+                  .writeToBuffer(),
+            );
+          }
           yield reflection.ServerReflectionResponse(
             originalRequest: item,
             fileDescriptorResponse: reflection.FileDescriptorResponse(
-              fileDescriptorProto: <List<int>>[file.writeToBuffer()],
+              fileDescriptorProto: payloads,
             ),
           );
+          continue;
+        }
+        if (item.hasFileByFilename()) {
+          filenameRequests.add(item.fileByFilename);
+          final file = _files[item.fileByFilename];
+          if (file == null) {
+            yield reflection.ServerReflectionResponse(
+              originalRequest: item,
+              errorResponse: reflection.ErrorResponse(
+                errorCode: StatusCode.notFound,
+                errorMessage: 'missing descriptor',
+              ),
+            );
+          } else {
+            yield reflection.ServerReflectionResponse(
+              originalRequest: item,
+              fileDescriptorResponse: reflection.FileDescriptorResponse(
+                fileDescriptorProto: <List<int>>[file.writeToBuffer()],
+              ),
+            );
+          }
         }
       }
+    } finally {
+      if (!finished.isCompleted) finished.complete();
     }
   }
 }

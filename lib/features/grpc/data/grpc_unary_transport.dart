@@ -90,8 +90,8 @@ class GrpcUnaryTransport {
     required Iterable<String> runtimeSecrets,
   }) async {
     try {
-      final headers = await call.headers;
       final message = await call;
+      final headers = await call.headers;
       final trailers = await call.trailers;
       return GrpcUnaryResponse(
         message: message,

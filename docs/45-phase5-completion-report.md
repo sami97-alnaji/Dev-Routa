@@ -67,9 +67,52 @@ decodes/sanitizes every received message while retaining bounded raw bytes.
 The gRPC-focused suite passes 45 tests and the complete suite passes 168 tests.
 Generation is identical across two consecutive runs, `flutter analyze` reports
 no issues, Windows and Android debug builds succeed, and `git diff --check`
-reports no whitespace errors. Schema 7, descriptor-cache persistence, drafts,
-saved requests, history, and UI have not started.
+reports no whitespace errors. At that checkpoint, schema 7 and persistence had
+not started; the following batch supersedes that local status. UI has not
+started.
 
-This report must remain `IN PROGRESS` until implementation, CI, merged-main
-verification, repository closure documentation, and the new annotated
-`v0.5.0-alpha.1` milestone have all succeeded.
+## Schema 7 and persistence batch
+
+Schema version 7 adds descriptor snapshots, gRPC Saved Requests, independent
+drafts, unified unary/streaming invocation history, and retained stream events.
+The migration is additive from every supported version 1-6, preserves legacy
+sentinels, creates deterministic indexes, enables foreign keys, passes
+`foreign_key_check`, and reopens successfully without inventing gRPC rows.
+
+The repository validates workspace/collection/folder and descriptor ownership,
+deduplicates descriptors by workspace fingerprint, protects referenced
+snapshots, applies optimistic revisions, uses transactions for compound writes,
+and sanitizes every structured/text write by sensitive key and exact runtime
+secret. History supports bounded filtering/pagination, one-time streaming
+finalization, ordered bounded events, retention, cascade cleanup, replay into a
+new draft, JSON-path unary comparison, and direction/sequence streaming
+comparison. Shared secure references are retained; resolved secret values and
+runtime session objects are never persisted.
+
+The persistence-focused suite passes 21 tests and the complete suite passes 185
+tests. Consecutive build-runner execution produces no output or generated
+drift, formatting is clean, `flutter analyze` reports no issues, Windows and
+Android debug builds succeed, both artifacts exist, and `git diff --check`
+reports no whitespace errors. No Windows or Android gRPC UI was started.
+
+The previous high-count stability runs remain historical evidence and are not a
+per-edit closure requirement. Practical closure is bounded: the deterministic
+realtime cancel-during-reconnect, stale-old-connection, and reconnect lifecycle
+regressions each pass 20/20; the realtime session file passes 10/10; and the
+realtime and gRPC focused groups pass 3/3. These regressions use `Completer`
+signals and Cubit state, with no fixed-duration assertion synchronization.
+
+The captured full-suite seed `1186905880` passes 10/10. The complete suite
+passes 3/3 normally, once for each of the numeric seeds `104729`, `224737`,
+`32452843`, `49979687`, and `67867967`, and 1/1 with `--concurrency=1`.
+Build runner produces 28 outputs on its first regeneration and none on its
+second; formatting, analysis, the full suite, Windows and Android debug builds,
+`foreign_key_check`, raw SQLite secret scanning, and `git diff --check` pass.
+No Windows or Android gRPC UI was started.
+
+Future extended 100/50/20 stability stress belongs to a non-blocking nightly
+workflow and does not block this Phase 5 foundation.
+
+This report must remain `IN PROGRESS` until UI integration, CI, merged-main
+verification, repository closure documentation, and the next annotated
+milestone have all succeeded.

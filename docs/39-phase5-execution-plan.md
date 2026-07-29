@@ -9,8 +9,10 @@ Status: IN PROGRESS
    and direct generated-runtime dependencies, then add
    `lib/features/grpc/{application,data,domain,presentation}` with no widget
    access to channels, Drift, secure storage, deadlines, or descriptor bytes.
-3. Next slice: add schema-7 tables and additive migrations, repository methods, secure
-   reference cleanup, retention, and migration sentinel tests.
+3. Complete locally: schema-7 gRPC descriptor, saved-request, draft, invocation
+   history, and retained-event tables; additive migrations from versions 1-6;
+   repository sanitization, retention, replay, comparison, ownership, revision,
+   transaction, foreign-key, and migration sentinel coverage.
 4. Complete for the in-memory protocol layer: descriptor import/loading,
    descriptor-driven binary encoding/decoding, explicit stable-v1 reflection,
    unary, server streaming, client streaming, and bidirectional streaming.
@@ -23,6 +25,6 @@ Status: IN PROGRESS
 7. Only after local verification, obtain separate approval for commit, push, PR,
    merge, closure document, and annotated alpha tag.
 
-The descriptor, unary, dynamic codec, explicit reflection, and streaming
-foundations have passed their focused local gates. The next implementation slice
-begins with schema 7 and persistence; Phase 5 remains in progress.
+The protocol and persistence foundations have passed their focused local gates.
+The next implementation slice is the Windows and Android gRPC UI composition;
+Phase 5 remains in progress.

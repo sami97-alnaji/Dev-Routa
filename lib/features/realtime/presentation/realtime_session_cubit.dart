@@ -17,16 +17,20 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
     this._repository, {
     SecureStorageService? secureStorage,
     Map<String, String> variables = const <String, String>{},
+    Future<void> Function(Duration delay)? reconnectDelay,
   }) : _resolver = RealtimeValueResolver(secureStorage, variables: variables),
+       _reconnectDelay = reconnectDelay ?? Future<void>.delayed,
        super(const RealtimeSessionState());
   RealtimeSessionCubit._sibling(
     this._transport,
     this._repository,
     this._resolver,
+    this._reconnectDelay,
   ) : super(const RealtimeSessionState());
   final RealtimeTransport _transport;
   final RealtimeRepository _repository;
   final RealtimeValueResolver _resolver;
+  final Future<void> Function(Duration delay) _reconnectDelay;
   StreamSubscription<TransportMessage>? _subscription;
   RealtimeTransportConnection? _connection;
   var _generation = 0;
@@ -76,12 +80,24 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
         ),
       );
       _subscription = connection.messages.listen(
-        _receive,
-        onError: (Object error, StackTrace trace) => _failed(error),
-        onDone: _completed,
+        (message) {
+          if (_isCurrentConnection(generation)) _receive(message);
+        },
+        onError: (Object error, StackTrace trace) {
+          if (_isCurrentConnection(generation)) {
+            unawaited(_failed(error, generation));
+          }
+        },
+        onDone: () {
+          if (_isCurrentConnection(generation)) {
+            unawaited(_completed(generation));
+          }
+        },
       );
     } catch (error) {
-      if (!isClosed && generation == _generation) _failed(error);
+      if (!isClosed && generation == _generation) {
+        await _failed(error, generation);
+      }
     }
   }
 
@@ -195,8 +211,12 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
   Future<void> saveAiPreferences(AiConsentOptions options) =>
       _repository.saveAiPreferences(options);
 
-  RealtimeSessionCubit createSibling() =>
-      RealtimeSessionCubit._sibling(_transport, _repository, _resolver.fork());
+  RealtimeSessionCubit createSibling() => RealtimeSessionCubit._sibling(
+    _transport,
+    _repository,
+    _resolver.fork(),
+    _reconnectDelay,
+  );
 
   Future<void> sendText(String value) => _send(value, RealtimePayloadType.text);
   Future<void> sendJson(String value) async {
@@ -336,8 +356,8 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
     emit(state.copyWith(messages: messages));
   }
 
-  Future<void> _completed() async {
-    if (isClosed || _manualClose) {
+  Future<void> _completed(int generation) async {
+    if (!_isCurrentConnection(generation) || _manualClose) {
       return;
     }
     _flushPendingStreamMessages();
@@ -350,10 +370,18 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
     await _persist();
   }
 
-  Future<void> _failed(Object error) async {
-    if (isClosed || _manualClose) {
+  Future<void> _failed(Object error, int generation) async {
+    if (!_isCurrentConnection(generation) || _manualClose) {
       return;
     }
+    final failedSubscription = _subscription;
+    final failedConnection = _connection;
+    _subscription = null;
+    _connection = null;
+    final reconnectGeneration = ++_generation;
+    await failedSubscription?.cancel();
+    await failedConnection?.close();
+    if (isClosed || _manualClose || reconnectGeneration != _generation) return;
     _flushPendingStreamMessages();
     final failure = _failure(error);
     _append(
@@ -375,11 +403,10 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
           metrics: state.metrics.copyWith(reconnectAttempts: attempt + 1),
         ),
       );
-      final generation = _generation;
-      await Future<void>.delayed(policy.delayFor(attempt));
+      await _reconnectDelay(policy.delayFor(attempt));
       if (!isClosed &&
           !_manualClose &&
-          generation == _generation &&
+          reconnectGeneration == _generation &&
           state.config != null) {
         await _connect(state.config!, reconnectAttempt: attempt + 1);
       }
@@ -414,6 +441,9 @@ class RealtimeSessionCubit extends Cubit<RealtimeSessionState> {
       );
     }
   }
+
+  bool _isCurrentConnection(int generation) =>
+      !isClosed && generation == _generation;
 
   @override
   Future<void> close() async {

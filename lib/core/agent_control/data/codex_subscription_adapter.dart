@@ -124,10 +124,7 @@ class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
       );
     }
     if (_loginProcess != null) {
-      return const OfficialSignInLaunchResult(
-        launched: true,
-        category: 'official_sign_in_active',
-      );
+      return const OfficialSignInLaunchResult(launched: true);
     }
     try {
       final environment = await _runtime.environment();
@@ -141,18 +138,17 @@ class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
       _loginProcess = process;
       _verificationUrlOpened = false;
       final firstOutput = Completer<CodexDeviceAuthOutput>();
-      final output = StringBuffer();
-      void onLine(String raw) {
-        if (output.length < 2048) output.writeln(SecretMasker.redactText(raw));
-        final parsed = CodexDeviceAuthOutput.parse(output.toString());
-        _signInEvents.add(
-          OfficialSignInProgress(
-            lifecycle: 'awaiting_user_verification',
-            instructions: parsed.instructions,
-            verificationUrl: parsed.verificationUrl,
-            deviceCode: parsed.deviceCode,
-          ),
+      final output = CodexDeviceAuthOutputCollector();
+      void onChunk(String raw) {
+        final parsed = output.addChunk(raw);
+        if (parsed == null) return;
+        final progress = OfficialSignInProgress(
+          lifecycle: 'awaiting_user_verification',
+          instructions: parsed.instructions,
+          verificationUrl: parsed.verificationUrl,
+          deviceCode: parsed.deviceCode,
         );
+        _signInEvents.add(progress);
         if (parsed.verificationUrl != null && !_verificationUrlOpened) {
           _verificationUrlOpened = true;
           unawaited(
@@ -164,14 +160,8 @@ class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
         if (!firstOutput.isCompleted) firstOutput.complete(parsed);
       }
 
-      process.stdout
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())
-          .listen(onLine);
-      process.stderr
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())
-          .listen(onLine);
+      process.stdout.transform(utf8.decoder).listen(onChunk);
+      process.stderr.transform(utf8.decoder).listen(onChunk);
       unawaited(_watchLoginExit(process));
       final parsed = await firstOutput.future.timeout(
         const Duration(seconds: 5),
@@ -432,12 +422,24 @@ class CodexDeviceAuthOutput {
   });
 
   factory CodexDeviceAuthOutput.parse(String output) {
-    final sanitized = SecretMasker.redactText(output).trim();
-    final url = RegExp(r'https://[^\s]+').firstMatch(sanitized)?.group(0);
-    final code = RegExp(
-      r'(?:device|user|verification)\s*code\s*(?:is|:)?\s*([A-Z0-9]{4,}(?:-[A-Z0-9]{4,})*)',
-      caseSensitive: false,
-    ).firstMatch(sanitized)?.group(1);
+    final raw = stripAnsi(
+      output,
+    ).replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final url = RegExp(r'https://[^\s]+').firstMatch(raw)?.group(0);
+    final code =
+        RegExp(
+          r'^\s*([A-Z0-9]{3,8}(?:-[A-Z0-9]{3,8})+)\s*$',
+          multiLine: true,
+        ).firstMatch(raw)?.group(1) ??
+        (RegExp(
+              r'(?:device|user|verification|one[- ]time)\s+code|enter\s+(?:the\s+)?code',
+              caseSensitive: false,
+            ).hasMatch(raw)
+            ? RegExp(
+                r'\b([A-Z0-9]{3,8}(?:-[A-Z0-9]{3,8})+)\b',
+              ).firstMatch(raw)?.group(1)
+            : null);
+    final sanitized = SecretMasker.redactText(raw).trim();
     return CodexDeviceAuthOutput(
       instructions: sanitized.isEmpty ? null : sanitized,
       verificationUrl: url,
@@ -447,9 +449,31 @@ class CodexDeviceAuthOutput {
 
   static CodexDeviceAuthOutput empty() => const CodexDeviceAuthOutput();
 
+  static String stripAnsi(String value) =>
+      value.replaceAll(RegExp(r'\x1B\[[0-?]*[ -/]*[@-~]'), '');
+
   final String? instructions;
   final String? verificationUrl;
   final String? deviceCode;
+}
+
+class CodexDeviceAuthOutputCollector {
+  String _raw = '';
+  String? _fingerprint;
+
+  CodexDeviceAuthOutput? addChunk(String chunk) {
+    _raw =
+        '${_raw.length >= 4096 ? _raw.substring(_raw.length - 2048) : _raw}$chunk';
+    final parsed = CodexDeviceAuthOutput.parse(_raw);
+    final fingerprint = [
+      parsed.instructions,
+      parsed.verificationUrl,
+      parsed.deviceCode,
+    ].join('\u0000');
+    if (fingerprint == _fingerprint) return null;
+    _fingerprint = fingerprint;
+    return parsed;
+  }
 }
 
 class CodexExecutableLocator {

@@ -28,6 +28,7 @@ class CodexAgentsController extends ChangeNotifier {
   String? authenticationInstructions;
   String? verificationUrl;
   String? deviceCode;
+  bool signInActive = false;
   final List<String> audit = <String>[];
   AgentRunHandle? _active;
   StreamSubscription<OfficialSignInProgress>? _signInSubscription;
@@ -42,10 +43,14 @@ class CodexAgentsController extends ChangeNotifier {
 
   Future<void> openOfficialSignIn() async {
     final result = await _adapter.launchOfficialSignIn();
-    lastFailure = result.category;
-    authenticationInstructions = result.instructions;
-    verificationUrl = result.verificationUrl;
-    deviceCode = result.deviceCode;
+    if (result.category != 'official_sign_in_active') {
+      lastFailure = result.category;
+      authenticationInstructions =
+          result.instructions ?? authenticationInstructions;
+      verificationUrl = result.verificationUrl ?? verificationUrl;
+      deviceCode = result.deviceCode ?? deviceCode;
+    }
+    signInActive = result.launched;
     lifecycle = result.launched ? 'awaiting_user_verification' : 'failed';
     _audit(
       result.launched
@@ -115,12 +120,22 @@ class CodexAgentsController extends ChangeNotifier {
   }
 
   void _applySignInProgress(OfficialSignInProgress progress) {
+    final changed =
+        lifecycle != progress.lifecycle ||
+        (progress.instructions != null &&
+            authenticationInstructions != progress.instructions) ||
+        (progress.verificationUrl != null &&
+            verificationUrl != progress.verificationUrl) ||
+        (progress.deviceCode != null && deviceCode != progress.deviceCode) ||
+        lastFailure != progress.failureCategory;
+    if (!changed) return;
     lifecycle = progress.lifecycle;
     authenticationInstructions =
         progress.instructions ?? authenticationInstructions;
     verificationUrl = progress.verificationUrl ?? verificationUrl;
     deviceCode = progress.deviceCode ?? deviceCode;
     lastFailure = progress.failureCategory;
+    signInActive = progress.lifecycle == 'awaiting_user_verification';
     _audit('login ${progress.lifecycle}');
     if (progress.lifecycle == 'authenticated') unawaited(refresh());
     notifyListeners();

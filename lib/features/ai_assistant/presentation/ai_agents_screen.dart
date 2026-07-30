@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/agent_control/domain/agent_models.dart';
 import '../application/codex_agents_controller.dart';
@@ -74,6 +75,29 @@ class AiAgentsScreen extends StatelessWidget {
                   _row('Verification URL', controller.verificationUrl!),
                 if (controller.deviceCode != null)
                   _row('User/device code', controller.deviceCode!),
+                if (controller.verificationUrl != null ||
+                    controller.deviceCode != null)
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      if (controller.verificationUrl != null)
+                        TextButton.icon(
+                          onPressed: () => Clipboard.setData(
+                            ClipboardData(text: controller.verificationUrl!),
+                          ),
+                          icon: const Icon(Icons.copy),
+                          label: const Text('Copy verification URL'),
+                        ),
+                      if (controller.deviceCode != null)
+                        TextButton.icon(
+                          onPressed: () => Clipboard.setData(
+                            ClipboardData(text: controller.deviceCode!),
+                          ),
+                          icon: const Icon(Icons.copy),
+                          label: const Text('Copy device code'),
+                        ),
+                    ],
+                  ),
                 const SizedBox(height: 16),
                 Wrap(
                   spacing: 8,
@@ -84,7 +108,9 @@ class AiAgentsScreen extends StatelessWidget {
                       child: const Text('Detect Codex'),
                     ),
                     OutlinedButton(
-                      onPressed: controller.openOfficialSignIn,
+                      onPressed: controller.signInActive
+                          ? null
+                          : controller.openOfficialSignIn,
                       child: const Text('Open official sign-in'),
                     ),
                     FilledButton(

@@ -21,6 +21,8 @@ import '../../../features/graphql/application/graphql_schema_cubit.dart';
 import '../../../features/graphql/presentation/graphql_workflow_cubit.dart';
 import '../../../features/graphql/application/graphql_execution_service.dart';
 import '../../../features/graphql/application/graphql_subscription_service.dart';
+import '../../../features/ai_assistant/application/codex_agents_controller.dart';
+import '../../../features/ai_assistant/presentation/ai_agents_screen.dart';
 import '../../../shared/models/api_models.dart';
 import '../../requests/presentation/request_workflow_cubit.dart';
 import 'workspace_cubit.dart';
@@ -121,6 +123,10 @@ class _AppShellState extends State<AppShell> {
                         icon: Icon(Icons.account_tree_outlined),
                         label: Text('GraphQL'),
                       ),
+                      NavigationRailDestination(
+                        icon: Icon(Icons.smart_toy_outlined),
+                        label: Text('AI Agents'),
+                      ),
                     ],
                   ),
                   const VerticalDivider(width: 1),
@@ -157,6 +163,10 @@ class _AppShellState extends State<AppShell> {
                     icon: Icon(Icons.account_tree_outlined),
                     label: 'GraphQL',
                   ),
+                  NavigationDestination(
+                    icon: Icon(Icons.smart_toy_outlined),
+                    label: 'AI Agents',
+                  ),
                 ],
               )
             : null,
@@ -172,7 +182,7 @@ class _AppShellState extends State<AppShell> {
     3 => _environments(),
     4 => _settings(),
     5 => const RealtimeScreen(),
-    _ => BlocBuilder<WorkspaceCubit, WorkspaceState>(
+    6 => BlocBuilder<WorkspaceCubit, WorkspaceState>(
       builder: (context, state) {
         final workspaceId = state.selectedWorkspaceId;
         if (workspaceId == null) {
@@ -201,6 +211,12 @@ class _AppShellState extends State<AppShell> {
           ),
         );
       },
+    ),
+    _ => BlocBuilder<WorkspaceCubit, WorkspaceState>(
+      builder: (context, state) => AiAgentsScreen(
+        controller: context.read<CodexAgentsService>().controller,
+        workspaceId: state.selectedWorkspaceId ?? '',
+      ),
     ),
   };
 

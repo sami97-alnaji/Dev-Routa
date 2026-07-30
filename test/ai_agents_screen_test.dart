@@ -18,7 +18,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('AI Agents').first);
     await tester.pumpAndSettle();
-    expect(find.text('Codex'), findsOneWidget);
+    expect(find.text('Codex'), findsWidgets);
     expect(find.text('Detect Codex'), findsOneWidget);
     expect(find.text('Open official sign-in'), findsOneWidget);
     expect(find.text('Run connection test'), findsOneWidget);

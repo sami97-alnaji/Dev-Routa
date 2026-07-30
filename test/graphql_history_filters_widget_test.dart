@@ -67,14 +67,14 @@ void main() {
       );
       await cubit.refreshHistory();
       await tester.pumpAndSettle();
-      final historyScroll = find.byType(Scrollable).first;
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('graphql-history-outcome-filter')),
-        240,
-        scrollable: historyScroll,
+      await tester.drag(find.text('GraphQL Studio'), const Offset(0, -1200));
+      await tester.pumpAndSettle();
+      final outcomeFilter = find.byKey(
+        const Key('graphql-history-outcome-filter'),
       );
-
-      await tester.tap(find.byKey(const Key('graphql-history-outcome-filter')));
+      await tester.ensureVisible(outcomeFilter);
+      await tester.pumpAndSettle();
+      await tester.tap(outcomeFilter);
       await tester.pumpAndSettle();
       await tester.tap(find.text('GraphQL error').last);
       await tester.pumpAndSettle();
@@ -93,11 +93,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(clearFilters);
       await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        find.text('Showing 2 of 2'),
-        240,
-        scrollable: historyScroll,
-      );
+      await tester.ensureVisible(find.text('Showing 2 of 2'));
+      await tester.pumpAndSettle();
       expect(find.text('Showing 2 of 2'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });

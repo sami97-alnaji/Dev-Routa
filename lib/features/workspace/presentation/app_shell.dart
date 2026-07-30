@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -13,7 +14,10 @@ import '../../../core/rest/token_candidate_service.dart';
 import '../../../core/rest/variable_resolution_service.dart';
 import '../../../core/security/secret_masker.dart';
 import '../../../core/storage/local_workspace_repository.dart';
+import '../../../core/presentation/devroute_ui.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../features/realtime/presentation/realtime_screen.dart';
+import '../../../features/grpc/presentation/grpc_screen.dart';
 import '../../../features/graphql/presentation/graphql_screen.dart';
 import '../../../features/graphql/data/graphql_repository.dart';
 import '../../../features/graphql/data/graphql_introspection_service.dart';
@@ -39,6 +43,7 @@ class _AppShellState extends State<AppShell> {
   final _urlController = TextEditingController();
   String? _historyMethod;
   int? _historyMinimumStatus;
+  String? _selectedHistoryId;
   final Set<String> _restComparison = <String>{};
   String _responseSearch = '';
   bool _rawResponse = false;
@@ -47,6 +52,7 @@ class _AppShellState extends State<AppShell> {
   StreamSubscription<GraphqlWorkflowState>? _graphqlStateSubscription;
   bool _allowExit = false;
   bool _exitDialogOpen = false;
+  bool _sidebarCollapsed = false;
 
   @override
   void dispose() {
@@ -58,9 +64,15 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final compact = MediaQuery.sizeOf(context).width < 900;
+    final width = MediaQuery.sizeOf(context).width;
+    final windowsDesktop = defaultTargetPlatform == TargetPlatform.windows;
+    final mobileNavigation = !windowsDesktop && width < 900;
+    final compactSidebar = width < 1180;
     final requestState = context.watch<RequestWorkflowCubit>().state;
-    final body = Padding(padding: const EdgeInsets.all(16), child: _content());
+    final body = Padding(
+      padding: const EdgeInsets.all(DevRouteSpacing.md),
+      child: _content(),
+    );
     final graphqlDirty = _graphqlWorkflow?.state.hasAnyDirty ?? false;
     return PopScope(
       canPop: _allowExit || (!requestState.hasAnyDirty && !graphqlDirty),
@@ -73,70 +85,30 @@ class _AppShellState extends State<AppShell> {
         }
       },
       child: Scaffold(
-        appBar: compact
+        appBar: mobileNavigation
             ? AppBar(title: const Text('DevRoute AI Studio'))
             : null,
-        body: compact
+        body: mobileNavigation
             ? body
-            : Row(
+            : Column(
                 children: [
-                  NavigationRail(
-                    extended: true,
-                    selectedIndex: _selected,
-                    onDestinationSelected: _select,
-                    leading: const Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Text(
-                        'DevRoute',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
+                  _topBar(),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        _sidebar(forceCollapsed: compactSidebar),
+                        const VerticalDivider(width: 1),
+                        Expanded(child: body),
+                      ],
                     ),
-                    destinations: const [
-                      NavigationRailDestination(
-                        icon: Icon(Icons.folder_outlined),
-                        label: Text('Workspace'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.send_outlined),
-                        label: Text('Requests'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.history),
-                        label: Text('History'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.tune),
-                        label: Text('Environments'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.settings_outlined),
-                        label: Text('Settings'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.hub_outlined),
-                        label: Text('Realtime'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.account_tree_outlined),
-                        label: Text('GraphQL'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.smart_toy_outlined),
-                        label: Text('AI Agents'),
-                      ),
-                    ],
                   ),
-                  const VerticalDivider(width: 1),
-                  Expanded(child: body),
                 ],
               ),
-        bottomNavigationBar: compact
+        bottomNavigationBar: mobileNavigation
             ? NavigationBar(
-                selectedIndex: _selected,
-                onDestinationSelected: _select,
+                selectedIndex: _selected == 8 ? 7 : _selected.clamp(0, 7),
+                onDestinationSelected: (value) =>
+                    _select(value == 7 ? 8 : value),
                 destinations: const [
                   NavigationDestination(
                     icon: Icon(Icons.folder_outlined),
@@ -175,13 +147,227 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _select(int value) => setState(() => _selected = value);
+
+  Widget _topBar() => BlocBuilder<WorkspaceCubit, WorkspaceState>(
+    builder: (context, state) {
+      final activeEnvironments = state.environments
+          .where((item) => item.isActive)
+          .toList();
+      final activeEnvironment = activeEnvironments.isEmpty
+          ? null
+          : activeEnvironments.first;
+      final selectedWorkspaces = state.workspaces
+          .where((item) => item.id == state.selectedWorkspaceId)
+          .toList();
+      return Container(
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: const BoxDecoration(
+          color: DevRouteColors.panel,
+          border: Border(bottom: BorderSide(color: DevRouteColors.border)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.route, color: DevRouteColors.accent, size: 20),
+            const SizedBox(width: 7),
+            const Text(
+              'DevRoute',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+            const SizedBox(width: 20),
+            _topBarMenu(
+              icon: Icons.workspaces_outline,
+              label: selectedWorkspaces.isEmpty
+                  ? 'Workspace'
+                  : selectedWorkspaces.first.name,
+              onTap: () => _select(0),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 430),
+                child: SizedBox(
+                  height: 32,
+                  child: TextField(
+                    onSubmitted: context.read<WorkspaceCubit>().search,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search, size: 17),
+                      hintText: 'Search requests, URLs, and history',
+                      contentPadding: EdgeInsets.zero,
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const Spacer(),
+            _topBarMenu(
+              icon: Icons.layers_outlined,
+              label: activeEnvironment?.name ?? 'No environment',
+              onTap: () => _select(3),
+            ),
+            const SizedBox(width: 8),
+            const DevRouteStatusBadge(
+              'Local',
+              tone: DevRouteStatusTone.success,
+              icon: Icons.circle,
+            ),
+            const SizedBox(width: 4),
+            Tooltip(
+              message: 'AI Agents',
+              child: IconButton(
+                onPressed: () => _select(8),
+                icon: const Icon(Icons.smart_toy_outlined, size: 19),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+
+  Widget _topBarMenu({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(4),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: DevRouteColors.secondaryText),
+          const SizedBox(width: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 120),
+            child: Text(label, overflow: TextOverflow.ellipsis),
+          ),
+          const SizedBox(width: 3),
+          const Icon(Icons.expand_more, size: 16),
+        ],
+      ),
+    ),
+  );
+
+  Widget _sidebar({required bool forceCollapsed}) {
+    const destinations = <(int, String, IconData)>[
+      (0, 'Workspace', Icons.folder_outlined),
+      (1, 'Requests', Icons.send_outlined),
+      (2, 'History', Icons.history),
+      (3, 'Environments', Icons.tune),
+      (5, 'Realtime', Icons.hub_outlined),
+      (6, 'GraphQL', Icons.account_tree_outlined),
+      (7, 'gRPC', Icons.swap_calls),
+      (8, 'AI Agents', Icons.smart_toy_outlined),
+      (4, 'Settings', Icons.settings_outlined),
+    ];
+    final collapsed = forceCollapsed || _sidebarCollapsed;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      width: collapsed ? 56 : 220,
+      color: DevRouteColors.sidebar,
+      child: Column(
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: IconButton(
+              tooltip: collapsed ? 'Expand sidebar' : 'Collapse sidebar',
+              onPressed: forceCollapsed
+                  ? null
+                  : () =>
+                        setState(() => _sidebarCollapsed = !_sidebarCollapsed),
+              icon: Icon(
+                collapsed ? Icons.chevron_right : Icons.chevron_left,
+                size: 18,
+              ),
+            ),
+          ),
+          for (final destination in destinations)
+            Tooltip(
+              message: destination.$2,
+              child: InkWell(
+                onTap: () => _select(destination.$1),
+                child: Container(
+                  height: 40,
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: _selected == destination.$1
+                        ? DevRouteColors.hover
+                        : null,
+                    border: _selected == destination.$1
+                        ? const Border(
+                            left: BorderSide(
+                              color: DevRouteColors.accent,
+                              width: 3,
+                            ),
+                          )
+                        : null,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        destination.$3,
+                        size: 17,
+                        color: _selected == destination.$1
+                            ? DevRouteColors.accent
+                            : DevRouteColors.secondaryText,
+                      ),
+                      if (!collapsed) ...[
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            destination.$2,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          const Spacer(),
+          if (!collapsed)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text(
+                'Desktop workspace',
+                style: TextStyle(
+                  color: DevRouteColors.secondaryText,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _content() => switch (_selected) {
     0 => _workspace(),
     1 => _request(),
     2 => _history(),
     3 => _environments(),
     4 => _settings(),
-    5 => const RealtimeScreen(),
+    5 =>
+      defaultTargetPlatform == TargetPlatform.windows
+          ? const DevRoutePanel(
+              padding: EdgeInsets.all(DevRouteSpacing.sm),
+              header: DevRoutePanelHeader(
+                title: 'Realtime',
+                subtitle: 'Sessions · status · events · composer · filters',
+              ),
+              child: RealtimeScreen(),
+            )
+          : const RealtimeScreen(),
     6 => BlocBuilder<WorkspaceCubit, WorkspaceState>(
       builder: (context, state) {
         final workspaceId = state.selectedWorkspaceId;
@@ -206,12 +392,23 @@ class _AppShellState extends State<AppShell> {
                       request: request,
                     ),
               )..load(),
-              child: const GraphqlScreen(),
+              child: defaultTargetPlatform == TargetPlatform.windows
+                  ? const DevRoutePanel(
+                      padding: EdgeInsets.all(DevRouteSpacing.sm),
+                      header: DevRoutePanelHeader(
+                        title: 'GraphQL',
+                        subtitle:
+                            'Schema explorer · query editor · variables · response',
+                      ),
+                      child: GraphqlScreen(),
+                    )
+                  : const GraphqlScreen(),
             ),
           ),
         );
       },
     ),
+    7 => const GrpcScreen(),
     _ => BlocBuilder<WorkspaceCubit, WorkspaceState>(
       builder: (context, state) => AiAgentsScreen(
         controller: context.read<CodexAgentsService>().controller,
@@ -560,25 +757,73 @@ class _AppShellState extends State<AppShell> {
         );
       }
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(
-            height: 42,
+          Container(
+            height: 38,
+            decoration: const BoxDecoration(
+              color: DevRouteColors.panel,
+              border: Border(bottom: BorderSide(color: DevRouteColors.border)),
+            ),
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: [
                 for (var i = 0; i < state.tabs.length; i++)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: InputChip(
-                      selected: i == state.activeIndex,
-                      label: Text(
-                        '${state.tabs[i].name}${state.dirtyIds.contains(state.tabs[i].id) ? ' *' : ''}',
+                  InkWell(
+                    onTap: () => cubit.selectTab(i),
+                    child: Container(
+                      constraints: const BoxConstraints(
+                        minWidth: 150,
+                        maxWidth: 240,
                       ),
-                      onPressed: () => cubit.selectTab(i),
-                      onDeleted: state.tabs.length == 1 && !state.isDirty
-                          ? null
-                          : () => _closeRequestTab(),
+                      padding: const EdgeInsets.only(left: 10, right: 4),
+                      decoration: BoxDecoration(
+                        color: i == state.activeIndex
+                            ? DevRouteColors.panelSecondary
+                            : Colors.transparent,
+                        border: Border(
+                          bottom: BorderSide(
+                            color: i == state.activeIndex
+                                ? DevRouteColors.accent
+                                : Colors.transparent,
+                            width: 2,
+                          ),
+                          right: const BorderSide(color: DevRouteColors.border),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          DevRouteStatusBadge(
+                            state.tabs[i].method.name.toUpperCase(),
+                            tone: DevRouteStatusTone.info,
+                          ),
+                          const SizedBox(width: 7),
+                          Expanded(
+                            child: Text(
+                              state.tabs[i].name,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          if (state.dirtyIds.contains(state.tabs[i].id))
+                            const Text(
+                              '●',
+                              style: TextStyle(
+                                color: DevRouteColors.accent,
+                                fontSize: 9,
+                              ),
+                            ),
+                          IconButton(
+                            tooltip: 'Close request tab',
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                            onPressed: state.tabs.length == 1 && !state.isDirty
+                                ? null
+                                : _closeRequestTab,
+                            icon: const Icon(Icons.close, size: 15),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 IconButton(
@@ -591,132 +836,172 @@ class _AppShellState extends State<AppShell> {
               ],
             ),
           ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          DevRouteToolbar(
             children: [
               SizedBox(
-                width: 260,
-                child: TextFormField(
-                  key: ValueKey('${state.request.id}-name'),
-                  initialValue: state.request.name,
-                  onChanged: cubit.updateName,
+                width: 96,
+                height: 34,
+                child: DropdownButtonFormField<HttpMethod>(
+                  initialValue: state.request.method,
+                  isExpanded: true,
                   decoration: const InputDecoration(
-                    labelText: 'Request name',
-                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 9),
+                    isDense: true,
                   ),
+                  items: HttpMethod.values
+                      .map(
+                        (item) => DropdownMenuItem(
+                          value: item,
+                          child: Text(item.name.toUpperCase()),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: sendingActiveRequest
+                      ? null
+                      : (value) => cubit.updateMethod(value!),
                 ),
               ),
-              DropdownButton<String?>(
-                value: state.request.collectionId,
-                hint: const Text('Collection'),
-                items: <DropdownMenuItem<String?>>[
-                  const DropdownMenuItem(
-                    value: null,
-                    child: Text('No collection'),
-                  ),
-                  ...workspace.collections.map(
-                    (item) => DropdownMenuItem(
-                      value: item.id,
-                      child: Text(item.name),
-                    ),
-                  ),
-                ],
-                onChanged: (value) => cubit.assignLocation(value, null),
-              ),
-              DropdownButton<String?>(
-                value: state.request.folderId,
-                hint: const Text('Folder'),
-                items: <DropdownMenuItem<String?>>[
-                  const DropdownMenuItem(value: null, child: Text('No folder')),
-                  ...workspace.folders.map(
-                    (item) => DropdownMenuItem(
-                      value: item.id,
-                      child: Text(item.name),
-                    ),
-                  ),
-                ],
-                onChanged: state.request.collectionId == null
-                    ? null
-                    : (value) => cubit.assignLocation(
-                        state.request.collectionId,
-                        value,
-                      ),
-              ),
-              TextButton.icon(
-                onPressed: sendingActiveRequest ? null : cubit.save,
-                icon: const Icon(Icons.save_outlined),
-                label: const Text('Save'),
-              ),
-              TextButton.icon(
-                onPressed: _closeRequestTab,
-                icon: const Icon(Icons.close),
-                label: const Text('Close'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              DropdownButton<HttpMethod>(
-                value: state.request.method,
-                items: HttpMethod.values
-                    .map(
-                      (item) => DropdownMenuItem(
-                        value: item,
-                        child: Text(item.name.toUpperCase()),
-                      ),
-                    )
-                    .toList(),
-                onChanged: sendingActiveRequest
-                    ? null
-                    : (value) => cubit.updateMethod(value!),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
+              SizedBox(
+                width: (MediaQuery.sizeOf(context).width * .37).clamp(330, 720),
+                height: 34,
                 child: TextField(
                   controller: _urlController,
                   enabled: !sendingActiveRequest,
                   onChanged: cubit.updateUrl,
                   decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.link, size: 17),
                     hintText: 'https://api.example.com/resource',
+                    contentPadding: EdgeInsets.zero,
+                    isDense: true,
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
-              FilledButton.icon(
+              DevRouteToolbarButton(
+                label: sendingActiveRequest ? 'Cancel' : 'Send',
+                icon: sendingActiveRequest
+                    ? Icons.stop_circle_outlined
+                    : Icons.send,
+                primary: true,
                 onPressed: sendingActiveRequest
                     ? cubit.cancel
                     : () => _sendWithSafety(cubit, state, workspace),
-                icon: Icon(
-                  sendingActiveRequest
-                      ? Icons.stop_circle_outlined
-                      : Icons.send,
-                ),
-                label: Text(sendingActiveRequest ? 'Cancel' : 'Send'),
+              ),
+              DevRouteToolbarButton(
+                label: 'Save',
+                icon: Icons.save_outlined,
+                onPressed: sendingActiveRequest ? null : cubit.save,
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          _requestEditor(state, cubit, workspace),
-          const SizedBox(height: 8),
+          const SizedBox(height: DevRouteSpacing.sm),
           Expanded(
-            child: state.response == null
-                ? const Card(
-                    child: Center(
-                      child: Text(
-                        'Configure and send a request. Drafts autosave locally.',
+            child: DevRouteSplitView(
+              initialRatio: .53,
+              minFirst: 390,
+              minSecond: 360,
+              first: DevRoutePanel(
+                padding: const EdgeInsets.all(DevRouteSpacing.sm),
+                header: DevRoutePanelHeader(
+                  title: 'Request',
+                  subtitle: state.request.name,
+                  trailing: SizedBox(
+                    width: 230,
+                    height: 34,
+                    child: TextFormField(
+                      key: ValueKey('${state.request.id}-name'),
+                      initialValue: state.request.name,
+                      onChanged: cubit.updateName,
+                      decoration: const InputDecoration(
+                        labelText: 'Request name',
+                        contentPadding: EdgeInsets.symmetric(horizontal: 8),
+                        isDense: true,
                       ),
                     ),
-                  )
-                : _response(
-                    state.request,
-                    state.response!,
-                    state.sensitiveValues[state.request.id] ?? const <String>{},
                   ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      height: 34,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButton<String?>(
+                              value: state.request.collectionId,
+                              isExpanded: true,
+                              hint: const Text('No collection'),
+                              items: <DropdownMenuItem<String?>>[
+                                const DropdownMenuItem(
+                                  value: null,
+                                  child: Text('No collection'),
+                                ),
+                                ...workspace.collections.map(
+                                  (item) => DropdownMenuItem(
+                                    value: item.id,
+                                    child: Text(item.name),
+                                  ),
+                                ),
+                              ],
+                              onChanged: (value) =>
+                                  cubit.assignLocation(value, null),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DropdownButton<String?>(
+                              value: state.request.folderId,
+                              isExpanded: true,
+                              hint: const Text('No folder'),
+                              items: <DropdownMenuItem<String?>>[
+                                const DropdownMenuItem(
+                                  value: null,
+                                  child: Text('No folder'),
+                                ),
+                                ...workspace.folders.map(
+                                  (item) => DropdownMenuItem(
+                                    value: item.id,
+                                    child: Text(item.name),
+                                  ),
+                                ),
+                              ],
+                              onChanged: state.request.collectionId == null
+                                  ? null
+                                  : (value) => cubit.assignLocation(
+                                      state.request.collectionId,
+                                      value,
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: DevRouteSpacing.sm),
+                    Expanded(child: _requestEditor(state, cubit, workspace)),
+                  ],
+                ),
+              ),
+              second: state.response == null
+                  ? const DevRoutePanel(
+                      padding: EdgeInsets.zero,
+                      header: DevRoutePanelHeader(
+                        title: 'Response',
+                        subtitle: 'Status · duration · size',
+                      ),
+                      child: DevRouteEmptyState(
+                        icon: Icons.data_object,
+                        title: 'No response yet',
+                        message:
+                            'Configure the request and press Send. Drafts autosave locally.',
+                      ),
+                    )
+                  : _response(
+                      state.request,
+                      state.response!,
+                      state.sensitiveValues[state.request.id] ??
+                          const <String>{},
+                    ),
+            ),
           ),
         ],
       );
@@ -729,102 +1014,115 @@ class _AppShellState extends State<AppShell> {
     WorkspaceState workspace,
   ) => DefaultTabController(
     length: 6,
-    child: Card(
-      child: SizedBox(
-        height: 250,
-        child: Column(
-          children: [
-            const TabBar(
-              isScrollable: true,
-              tabs: [
-                Tab(text: 'Params'),
-                Tab(text: 'Headers'),
-                Tab(text: 'Auth'),
-                Tab(text: 'Body'),
-                Tab(text: 'Settings'),
-                Tab(text: 'Resolved Preview'),
-              ],
-            ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  _keyValueList(
-                    title: 'Query parameters',
-                    items: state.request.queryParams
-                        .map((item) => (item.key, item.value, item.enabled))
-                        .toList(),
-                    onAdd: () async {
-                      final pair = await _askPair('Add query parameter');
-                      if (pair != null) {
-                        cubit.updateQueryParams(<RequestQueryParamModel>[
-                          ...state.request.queryParams,
-                          RequestQueryParamModel(key: pair.$1, value: pair.$2),
-                        ]);
-                      }
-                    },
-                    onRemove: (index) {
-                      final values = List<RequestQueryParamModel>.of(
-                        state.request.queryParams,
-                      )..removeAt(index);
-                      cubit.updateQueryParams(values);
-                    },
-                    onToggle: (index, enabled) {
-                      final values = List<RequestQueryParamModel>.of(
-                        state.request.queryParams,
-                      );
-                      final old = values[index];
-                      values[index] = RequestQueryParamModel(
-                        key: old.key,
-                        value: old.value,
-                        enabled: enabled,
-                      );
-                      cubit.updateQueryParams(values);
-                    },
-                  ),
-                  _keyValueList(
-                    title: 'Headers',
-                    items: state.request.headers
-                        .map(
-                          (item) => (
-                            item.key,
-                            item.isSecret ? '[SECRET]' : item.value,
-                            item.enabled,
-                          ),
-                        )
-                        .toList(),
-                    onAdd: () => _addHeader(state, cubit),
-                    onRemove: (index) {
-                      final values = List<RequestHeaderModel>.of(
-                        state.request.headers,
-                      )..removeAt(index);
-                      cubit.updateHeaders(values);
-                    },
-                    onToggle: (index, enabled) {
-                      final values = List<RequestHeaderModel>.of(
-                        state.request.headers,
-                      );
-                      final old = values[index];
-                      values[index] = RequestHeaderModel(
-                        key: old.key,
-                        value: old.value,
-                        enabled: enabled,
-                        isSecret: old.isSecret,
-                        secretRef: old.secretRef,
-                      );
-                      cubit.updateHeaders(values);
-                    },
-                  ),
-                  _authEditor(state.request, cubit),
-                  _bodyEditor(state.request, cubit),
-                  _requestSettingsEditor(state.request, cubit),
-                  _resolvedPreview(state.request, workspace),
-                ],
-              ),
-            ),
+    child: Column(
+      children: [
+        const TabBar(
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          tabs: [
+            Tab(text: 'Params'),
+            Tab(text: 'Authorization'),
+            Tab(text: 'Headers'),
+            Tab(text: 'Body'),
+            Tab(text: 'Scripts'),
+            Tab(text: 'Settings'),
           ],
         ),
-      ),
+        Expanded(
+          child: TabBarView(
+            children: [
+              _keyValueList(
+                title: 'Query parameters',
+                items: state.request.queryParams
+                    .map((item) => (item.key, item.value, item.enabled))
+                    .toList(),
+                onAdd: () async {
+                  final pair = await _askPair('Add query parameter');
+                  if (pair != null) {
+                    cubit.updateQueryParams(<RequestQueryParamModel>[
+                      ...state.request.queryParams,
+                      RequestQueryParamModel(key: pair.$1, value: pair.$2),
+                    ]);
+                  }
+                },
+                onRemove: (index) {
+                  final values = List<RequestQueryParamModel>.of(
+                    state.request.queryParams,
+                  )..removeAt(index);
+                  cubit.updateQueryParams(values);
+                },
+                onToggle: (index, enabled) {
+                  final values = List<RequestQueryParamModel>.of(
+                    state.request.queryParams,
+                  );
+                  final old = values[index];
+                  values[index] = RequestQueryParamModel(
+                    key: old.key,
+                    value: old.value,
+                    enabled: enabled,
+                  );
+                  cubit.updateQueryParams(values);
+                },
+              ),
+              _authEditor(state.request, cubit),
+              _keyValueList(
+                title: 'Headers',
+                items: state.request.headers
+                    .map(
+                      (item) => (
+                        item.key,
+                        item.isSecret ? '[SECRET]' : item.value,
+                        item.enabled,
+                      ),
+                    )
+                    .toList(),
+                onAdd: () => _addHeader(state, cubit),
+                onRemove: (index) {
+                  final values = List<RequestHeaderModel>.of(
+                    state.request.headers,
+                  )..removeAt(index);
+                  cubit.updateHeaders(values);
+                },
+                onToggle: (index, enabled) {
+                  final values = List<RequestHeaderModel>.of(
+                    state.request.headers,
+                  );
+                  final old = values[index];
+                  values[index] = RequestHeaderModel(
+                    key: old.key,
+                    value: old.value,
+                    enabled: enabled,
+                    isSecret: old.isSecret,
+                    secretRef: old.secretRef,
+                  );
+                  cubit.updateHeaders(values);
+                },
+              ),
+              _bodyEditor(state.request, cubit),
+              _scriptsAndResolvedPreview(state.request, workspace),
+              _requestSettingsEditor(state.request, cubit),
+            ],
+          ),
+        ),
+      ],
     ),
+  );
+
+  Widget _scriptsAndResolvedPreview(
+    ApiRequestModel request,
+    WorkspaceState workspace,
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const Padding(
+        padding: EdgeInsets.fromLTRB(12, 10, 12, 4),
+        child: Text(
+          'Scripts are not configured for this request. The resolved execution preview remains available below.',
+          style: TextStyle(color: DevRouteColors.secondaryText, fontSize: 12),
+        ),
+      ),
+      Expanded(child: _resolvedPreview(request, workspace)),
+    ],
   );
 
   Widget _keyValueList({
@@ -1091,25 +1389,37 @@ class _AppShellState extends State<AppShell> {
               .join('\n');
     return DefaultTabController(
       length: 5,
-      child: Card(
+      child: DevRoutePanel(
+        padding: EdgeInsets.zero,
+        header: DevRoutePanelHeader(
+          title: 'Response',
+          subtitle: response.error ?? response.statusMessage ?? 'HTTP response',
+          trailing: Wrap(
+            spacing: 6,
+            children: [
+              DevRouteStatusBadge(
+                '${response.statusCode ?? '—'}',
+                tone:
+                    (response.statusCode ?? 500) >= 400 ||
+                        response.error != null
+                    ? DevRouteStatusTone.error
+                    : DevRouteStatusTone.success,
+              ),
+              DevRouteStatusBadge('${response.durationMs} ms'),
+              DevRouteStatusBadge('${response.sizeBytes} bytes'),
+            ],
+          ),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               child: Wrap(
-                spacing: 12,
-                runSpacing: 8,
+                spacing: 6,
+                runSpacing: 4,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Text(
-                    response.error ??
-                        '${response.statusCode ?? '—'} ${response.statusMessage ?? ''}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Text(
-                    '${response.durationMs} ms • ${response.sizeBytes} bytes${response.isTruncated ? ' • preview truncated' : ''}',
-                  ),
                   IconButton(
                     tooltip: 'Safe copy',
                     onPressed: () => _copySafe(response.body, sensitiveValues),
@@ -1135,8 +1445,8 @@ class _AppShellState extends State<AppShell> {
                 Tab(text: 'Body'),
                 Tab(text: 'Headers'),
                 Tab(text: 'Cookies'),
-                Tab(text: 'Timeline'),
-                Tab(text: 'Diagnostics'),
+                Tab(text: 'Test Results'),
+                Tab(text: 'Console'),
               ],
             ),
             Expanded(
@@ -1205,6 +1515,25 @@ class _AppShellState extends State<AppShell> {
                               .toList(),
                   ),
                   ListView(
+                    children: diagnostics.isEmpty
+                        ? const [ListTile(title: Text('No test results.'))]
+                        : diagnostics
+                              .map(
+                                (item) => ListTile(
+                                  leading: Icon(
+                                    item.kind == DiagnosticKind.observed
+                                        ? Icons.fact_check_outlined
+                                        : Icons.lightbulb_outline,
+                                  ),
+                                  title: Text(
+                                    '${item.kind.name}: ${item.title}',
+                                  ),
+                                  subtitle: Text(item.detail),
+                                ),
+                              )
+                              .toList(),
+                  ),
+                  ListView(
                     children: [
                       ListTile(
                         title: const Text('Started'),
@@ -1227,25 +1556,6 @@ class _AppShellState extends State<AppShell> {
                         ),
                     ],
                   ),
-                  ListView(
-                    children: diagnostics.isEmpty
-                        ? const [ListTile(title: Text('No diagnostics.'))]
-                        : diagnostics
-                              .map(
-                                (item) => ListTile(
-                                  leading: Icon(
-                                    item.kind == DiagnosticKind.observed
-                                        ? Icons.fact_check_outlined
-                                        : Icons.lightbulb_outline,
-                                  ),
-                                  title: Text(
-                                    '${item.kind.name}: ${item.title}',
-                                  ),
-                                  subtitle: Text(item.detail),
-                                ),
-                              )
-                              .toList(),
-                  ),
                 ],
               ),
             ),
@@ -1266,26 +1576,29 @@ class _AppShellState extends State<AppShell> {
                     (item.status ?? 0) >= _historyMinimumStatus!),
           )
           .toList();
+      final selectedItems = filtered
+          .where((item) => item.id == _selectedHistoryId)
+          .toList();
+      final selectedItem = selectedItems.isEmpty ? null : selectedItems.first;
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          const DevRouteSectionHeader(
+            title: 'History',
+            subtitle: 'Search, inspect, compare, and replay captured traffic.',
+          ),
+          const SizedBox(height: DevRouteSpacing.sm),
+          DevRouteToolbar(
             children: [
-              Text(
-                'History',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
               SizedBox(
                 width: 280,
+                height: 34,
                 child: TextField(
                   onChanged: cubit.search,
                   decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search),
+                    prefixIcon: Icon(Icons.search, size: 17),
                     hintText: 'Search history',
-                    border: OutlineInputBorder(),
+                    isDense: true,
                   ),
                 ),
               ),
@@ -1344,92 +1657,253 @@ class _AppShellState extends State<AppShell> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: DevRouteSpacing.sm),
           Expanded(
-            child: filtered.isEmpty
-                ? const Center(child: Text('No matching history records.'))
-                : ListView.builder(
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final item = filtered[index];
-                      return Card(
-                        child: ListTile(
-                          leading: Checkbox(
-                            value: _restComparison.contains(item.id),
-                            onChanged: (selected) => setState(() {
-                              if (selected == true &&
-                                  _restComparison.length < 2) {
-                                _restComparison.add(item.id);
-                              } else {
-                                _restComparison.remove(item.id);
-                              }
-                            }),
+            child: DevRouteSplitView(
+              initialRatio: .67,
+              minFirst: 520,
+              minSecond: 260,
+              first: DevRoutePanel(
+                padding: EdgeInsets.zero,
+                header: DevRoutePanelHeader(
+                  title: 'Request history',
+                  subtitle: '${filtered.length} records',
+                ),
+                child: filtered.isEmpty
+                    ? const DevRouteEmptyState(
+                        icon: Icons.history,
+                        title: 'No matching history',
+                        message:
+                            'Adjust the filters or send a request to create a record.',
+                      )
+                    : Column(
+                        children: [
+                          const _HistoryTableHeader(),
+                          const Divider(height: 1),
+                          Expanded(
+                            child: ListView.builder(
+                              itemCount: filtered.length,
+                              itemBuilder: (context, index) {
+                                final item = filtered[index];
+                                final selected = item.id == _selectedHistoryId;
+                                return InkWell(
+                                  onTap: () => setState(
+                                    () => _selectedHistoryId = item.id,
+                                  ),
+                                  onDoubleTap: () => _showHistory(item),
+                                  child: Container(
+                                    height: 48,
+                                    color: selected
+                                        ? DevRouteColors.hover
+                                        : Colors.transparent,
+                                    child: Row(
+                                      children: [
+                                        SizedBox(
+                                          width: 34,
+                                          child: Checkbox(
+                                            value: _restComparison.contains(
+                                              item.id,
+                                            ),
+                                            onChanged: (checked) => setState(
+                                              () {
+                                                if (checked == true &&
+                                                    _restComparison.length <
+                                                        2) {
+                                                  _restComparison.add(item.id);
+                                                } else {
+                                                  _restComparison.remove(
+                                                    item.id,
+                                                  );
+                                                }
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: 74,
+                                          child: DevRouteStatusBadge(
+                                            item.method.toUpperCase(),
+                                            tone: DevRouteStatusTone.info,
+                                          ),
+                                        ),
+                                        Expanded(
+                                          flex: 4,
+                                          child: Text(
+                                            item.url,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: 64,
+                                          child: Text(
+                                            '${item.status ?? 'Error'}',
+                                            style: TextStyle(
+                                              color: (item.status ?? 500) >= 400
+                                                  ? Colors.redAccent
+                                                  : DevRouteColors.success,
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: 76,
+                                          child: Text(
+                                            '${item.durationMs} ms',
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.bodySmall,
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: 128,
+                                          child: Text(
+                                            item.createdAt
+                                                .toLocal()
+                                                .toString()
+                                                .substring(0, 19),
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.bodySmall,
+                                          ),
+                                        ),
+                                        IconButton(
+                                          tooltip: 'Replay as new draft',
+                                          onPressed: () =>
+                                              _replayHistory(item.id),
+                                          icon: const Icon(
+                                            Icons.replay_outlined,
+                                            size: 17,
+                                          ),
+                                        ),
+                                        IconButton(
+                                          tooltip: 'Delete',
+                                          onPressed: () =>
+                                              cubit.removeHistory(item.id),
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            size: 17,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                           ),
-                          title: Text(
-                            '${item.method.toUpperCase()} ${item.url}',
+                        ],
+                      ),
+              ),
+              second: DevRoutePanel(
+                header: const DevRoutePanelHeader(
+                  title: 'Details',
+                  subtitle: 'Selected request summary',
+                ),
+                child: selectedItem == null
+                    ? const DevRouteEmptyState(
+                        icon: Icons.touch_app_outlined,
+                        title: 'Select a record',
+                        message:
+                            'Choose a history row to inspect its safe summary.',
+                      )
+                    : ListView(
+                        children: [
+                          DevRouteStatusBadge(
+                            selectedItem.method.toUpperCase(),
+                            tone: DevRouteStatusTone.info,
                           ),
-                          subtitle: Text(
-                            '${item.status ?? 'Error'} • ${item.durationMs} ms • ${item.createdAt.toLocal()}',
+                          const SizedBox(height: 12),
+                          SelectableText(selectedItem.url),
+                          const SizedBox(height: 12),
+                          _historyDetailRow(
+                            'Status',
+                            '${selectedItem.status ?? 'Error'}',
                           ),
-                          onTap: () => _showHistory(item),
-                          trailing: Wrap(
-                            children: [
-                              IconButton(
-                                tooltip: 'Replay as new draft',
-                                onPressed: () => _replayHistory(item.id),
-                                icon: const Icon(Icons.replay_outlined),
-                              ),
-                              IconButton(
-                                tooltip: 'Delete',
-                                onPressed: () => cubit.removeHistory(item.id),
-                                icon: const Icon(Icons.delete_outline),
-                              ),
-                            ],
+                          _historyDetailRow(
+                            'Duration',
+                            '${selectedItem.durationMs} ms',
                           ),
-                        ),
-                      );
-                    },
-                  ),
+                          _historyDetailRow(
+                            'Timestamp',
+                            selectedItem.createdAt.toLocal().toString(),
+                          ),
+                          const SizedBox(height: 12),
+                          DevRouteToolbarButton(
+                            label: 'Open full safe details',
+                            icon: Icons.open_in_new,
+                            onPressed: () => _showHistory(selectedItem),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
           ),
         ],
       );
     },
   );
 
+  Widget _historyDetailRow(String label, String value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 5),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 76,
+          child: Text(
+            label,
+            style: const TextStyle(color: DevRouteColors.secondaryText),
+          ),
+        ),
+        Expanded(child: SelectableText(value)),
+      ],
+    ),
+  );
+
   Widget _environments() => BlocBuilder<WorkspaceCubit, WorkspaceState>(
     builder: (context, state) {
       final cubit = context.read<WorkspaceCubit>();
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          const DevRouteSectionHeader(
+            title: 'Environments',
+            subtitle:
+                'Manage reusable values and secure references by environment.',
+          ),
+          const SizedBox(height: DevRouteSpacing.sm),
+          DevRouteToolbar(
             children: [
-              Text(
-                'Environments',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              FilledButton.icon(
+              DevRouteToolbarButton(
+                label: 'New environment',
+                icon: Icons.add,
+                primary: true,
                 onPressed: () async {
                   final name = await _askName('New environment');
                   if (name != null) {
                     cubit.addEnvironment(name, EnvironmentKind.custom);
                   }
                 },
-                icon: const Icon(Icons.add),
-                label: const Text('New'),
+              ),
+              DevRouteToolbarButton(
+                label: 'Add variable',
+                icon: Icons.playlist_add,
+                onPressed: state.selectedEnvironmentId == null
+                    ? null
+                    : () => _editVariable(),
+              ),
+              const DevRouteStatusBadge(
+                'Changes save automatically',
+                tone: DevRouteStatusTone.success,
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: DevRouteSpacing.sm),
           Expanded(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 SizedBox(
-                  width: MediaQuery.sizeOf(context).width < 700 ? 180 : 300,
+                  width: MediaQuery.sizeOf(context).width < 900 ? 240 : 320,
                   child: ListView(
                     children: [
                       for (final item in state.environments)
@@ -1589,80 +2063,145 @@ class _AppShellState extends State<AppShell> {
     builder: (context, state) {
       final cubit = context.read<WorkspaceCubit>();
       final settings = state.settings;
-      return ListView(
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'Workspace settings',
-            style: Theme.of(context).textTheme.headlineMedium,
+          const DevRouteSectionHeader(
+            title: 'Settings',
+            subtitle: 'Workspace behavior, safety, storage, and appearance.',
           ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _numberField(
-                    'History retention days',
-                    settings.historyRetentionDays,
-                    (value) => cubit.updateSettings(
-                      WorkspaceSettingsModel(
-                        historyRetentionDays: value,
-                        historyMaximumCount: settings.historyMaximumCount,
-                        responsePreviewBytes: settings.responsePreviewBytes,
-                        productionStrictMode: settings.productionStrictMode,
-                      ),
+          const SizedBox(height: DevRouteSpacing.md),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: 220,
+                  child: DevRoutePanel(
+                    padding: EdgeInsets.zero,
+                    header: const DevRoutePanelHeader(title: 'Categories'),
+                    child: ListView(
+                      children: const [
+                        ListTile(
+                          dense: true,
+                          selected: true,
+                          leading: Icon(Icons.workspaces_outline, size: 18),
+                          title: Text('Workspace'),
+                        ),
+                        ListTile(
+                          dense: true,
+                          leading: Icon(Icons.shield_outlined, size: 18),
+                          title: Text('Safety'),
+                        ),
+                        ListTile(
+                          dense: true,
+                          leading: Icon(Icons.storage_outlined, size: 18),
+                          title: Text('Storage'),
+                        ),
+                        ListTile(
+                          dense: true,
+                          leading: Icon(Icons.palette_outlined, size: 18),
+                          title: Text('Appearance'),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  _numberField(
-                    'Maximum history records',
-                    settings.historyMaximumCount,
-                    (value) => cubit.updateSettings(
-                      WorkspaceSettingsModel(
-                        historyRetentionDays: settings.historyRetentionDays,
-                        historyMaximumCount: value,
-                        responsePreviewBytes: settings.responsePreviewBytes,
-                        productionStrictMode: settings.productionStrictMode,
-                      ),
+                ),
+                const SizedBox(width: DevRouteSpacing.sm),
+                Expanded(
+                  child: DevRoutePanel(
+                    header: const DevRoutePanelHeader(
+                      title: 'Workspace',
+                      subtitle: 'Retention, previews, and execution safeguards',
+                    ),
+                    child: ListView(
+                      children: [
+                        const Text(
+                          'History & response storage',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: DevRouteSpacing.md),
+                        _numberField(
+                          'History retention days',
+                          settings.historyRetentionDays,
+                          (value) => cubit.updateSettings(
+                            WorkspaceSettingsModel(
+                              historyRetentionDays: value,
+                              historyMaximumCount: settings.historyMaximumCount,
+                              responsePreviewBytes:
+                                  settings.responsePreviewBytes,
+                              productionStrictMode:
+                                  settings.productionStrictMode,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _numberField(
+                          'Maximum history records',
+                          settings.historyMaximumCount,
+                          (value) => cubit.updateSettings(
+                            WorkspaceSettingsModel(
+                              historyRetentionDays:
+                                  settings.historyRetentionDays,
+                              historyMaximumCount: value,
+                              responsePreviewBytes:
+                                  settings.responsePreviewBytes,
+                              productionStrictMode:
+                                  settings.productionStrictMode,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _numberField(
+                          'Response preview byte limit',
+                          settings.responsePreviewBytes,
+                          (value) => cubit.updateSettings(
+                            WorkspaceSettingsModel(
+                              historyRetentionDays:
+                                  settings.historyRetentionDays,
+                              historyMaximumCount: settings.historyMaximumCount,
+                              responsePreviewBytes: value,
+                              productionStrictMode:
+                                  settings.productionStrictMode,
+                            ),
+                          ),
+                        ),
+                        const Divider(height: 28),
+                        const Text(
+                          'Execution safety',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Strict production confirmation'),
+                          subtitle: const Text(
+                            'Require confirmation for POST, PUT, PATCH, and DELETE in production environments.',
+                          ),
+                          value: settings.productionStrictMode,
+                          onChanged: (value) => cubit.updateSettings(
+                            WorkspaceSettingsModel(
+                              historyRetentionDays:
+                                  settings.historyRetentionDays,
+                              historyMaximumCount: settings.historyMaximumCount,
+                              responsePreviewBytes:
+                                  settings.responsePreviewBytes,
+                              productionStrictMode: value,
+                            ),
+                          ),
+                        ),
+                        const ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(Icons.lock_outline),
+                          title: Text('TLS verification is on by default'),
+                          subtitle: Text(
+                            'HTTPS requests cannot silently disable certificate verification.',
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  _numberField(
-                    'Response preview byte limit',
-                    settings.responsePreviewBytes,
-                    (value) => cubit.updateSettings(
-                      WorkspaceSettingsModel(
-                        historyRetentionDays: settings.historyRetentionDays,
-                        historyMaximumCount: settings.historyMaximumCount,
-                        responsePreviewBytes: value,
-                        productionStrictMode: settings.productionStrictMode,
-                      ),
-                    ),
-                  ),
-                  SwitchListTile(
-                    title: const Text('Strict production confirmation'),
-                    subtitle: const Text(
-                      'Require confirmation for POST, PUT, PATCH, and DELETE in production environments.',
-                    ),
-                    value: settings.productionStrictMode,
-                    onChanged: (value) => cubit.updateSettings(
-                      WorkspaceSettingsModel(
-                        historyRetentionDays: settings.historyRetentionDays,
-                        historyMaximumCount: settings.historyMaximumCount,
-                        responsePreviewBytes: settings.responsePreviewBytes,
-                        productionStrictMode: value,
-                      ),
-                    ),
-                  ),
-                  const ListTile(
-                    leading: Icon(Icons.lock_outline),
-                    title: Text('TLS verification is on by default'),
-                    subtitle: Text(
-                      'HTTPS requests cannot silently disable certificate verification.',
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],
@@ -2428,4 +2967,25 @@ class _AppShellState extends State<AppShell> {
       }),
     );
   }
+}
+
+class _HistoryTableHeader extends StatelessWidget {
+  const _HistoryTableHeader();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 34,
+    padding: const EdgeInsets.only(left: 34),
+    color: DevRouteColors.panelSecondary,
+    child: const Row(
+      children: [
+        SizedBox(width: 74, child: Text('Protocol')),
+        Expanded(flex: 4, child: Text('Request URL')),
+        SizedBox(width: 64, child: Text('Status')),
+        SizedBox(width: 76, child: Text('Duration')),
+        SizedBox(width: 128, child: Text('Timestamp')),
+        SizedBox(width: 80),
+      ],
+    ),
+  );
 }

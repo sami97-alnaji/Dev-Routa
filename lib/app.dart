@@ -60,6 +60,10 @@ class DevRouteApp extends StatelessWidget {
           ),
           GoRoute(
             path: '/ai-agents',
+            builder: (context, state) => const AppShell(initialSection: 8),
+          ),
+          GoRoute(
+            path: '/grpc',
             builder: (context, state) => const AppShell(initialSection: 7),
           ),
         ],

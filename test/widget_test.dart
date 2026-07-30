@@ -21,8 +21,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Request name'), findsOneWidget);
     expect(find.text('Params'), findsOneWidget);
-    expect(find.text('Auth'), findsOneWidget);
-    expect(find.text('Resolved Preview'), findsOneWidget);
+    expect(find.text('Authorization'), findsOneWidget);
+    expect(find.text('Scripts'), findsOneWidget);
   });
 
   testWidgets(
@@ -61,7 +61,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Environments').first);
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'New'));
+    await tester.tap(find.text('New environment'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'Local QA');
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));
@@ -69,7 +69,7 @@ void main() {
     expect(find.text('Local QA'), findsOneWidget);
     await tester.tap(find.text('Local QA'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+    await tester.tap(find.text('Add variable'));
     await tester.pumpAndSettle();
     final fields = find.byType(TextField);
     await tester.enterText(fields.at(0), 'HOST');

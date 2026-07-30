@@ -33,7 +33,7 @@ void main() {
     );
 
     expect(readiness.canRun, isFalse);
-    expect(readiness.failureCategory, 'isolated_login_required');
+    expect(readiness.effectiveFailureCategory, 'isolated_login_required');
   });
 
   test(

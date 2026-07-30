@@ -51,6 +51,24 @@ class AiAgentsScreen extends StatelessWidget {
                   controller.readiness.mcpServerCount?.toString() ??
                       'not checked',
                 ),
+                _row(
+                  'Runtime readiness',
+                  controller.readiness.canRun ? 'ready' : 'blocked',
+                ),
+                _row(
+                  'Readiness failure',
+                  controller.readiness.effectiveFailureCategory,
+                ),
+                _row(
+                  'Detected MCP server names',
+                  controller.readiness.detectedMcpServerNames.isEmpty
+                      ? 'none'
+                      : controller.readiness.detectedMcpServerNames.join(', '),
+                ),
+                _row(
+                  'MCP startup notifications',
+                  controller.readiness.mcpStartupNotificationCount.toString(),
+                ),
                 _row('Current lifecycle state', controller.lifecycle),
                 _row('Tool bridge status', controller.bridgeStatus),
                 _row(

@@ -82,6 +82,8 @@ class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
           authentication: authentication,
           mcpServerCount: null,
           noMcpStartupEvents: true,
+          failureCategory: 'isolated_login_required',
+          failedProbeStage: 'authentication',
         );
       }
       final session = await Directory.systemTemp.createTemp('devroute-codex-');
@@ -99,13 +101,27 @@ class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
           authentication: authentication,
           mcpServerCount: count,
           noMcpStartupEvents: server.noMcpStartupEvents,
+          detectedMcpServerNames: server.detectedMcpServerNames,
+          mcpStartupNotificationCount: server.mcpStartupNotificationCount,
+          failureCategory: count == 0 && server.noMcpStartupEvents
+              ? null
+              : 'third_party_mcp_detected',
+          failedProbeStage: count == 0 && server.noMcpStartupEvents
+              ? null
+              : 'mcp_status_probe',
         );
       } finally {
         await server?.close();
         await session.delete(recursive: true);
       }
+    } on _CodexFailure catch (error) {
+      return CodexRuntimeReadiness.profileFailure(error.category);
+    } on TimeoutException {
+      return const CodexRuntimeReadiness.profileFailure('readiness_timeout');
     } catch (_) {
-      return const CodexRuntimeReadiness.profileFailure();
+      return const CodexRuntimeReadiness.profileFailure(
+        'mcp_status_probe_failed',
+      );
     }
   }
 
@@ -193,7 +209,9 @@ class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
     final executable = _locator.discover();
     if (executable == null) return handle.fail('not_installed');
     final readiness = await runtimeReadiness();
-    if (!readiness.canRun) return handle.fail(readiness.failureCategory);
+    if (!readiness.canRun) {
+      return handle.fail(readiness.effectiveFailureCategory);
+    }
     final session = await Directory.systemTemp.createTemp('devroute-codex-');
     _CodexAppServer? server;
     try {
@@ -380,24 +398,39 @@ class CodexRuntimeReadiness {
     required this.authentication,
     required this.mcpServerCount,
     required this.noMcpStartupEvents,
+    this.failureCategory,
+    this.failedProbeStage,
+    this.detectedMcpServerNames = const <String>[],
+    this.mcpStartupNotificationCount = 0,
   });
 
   const CodexRuntimeReadiness.notInstalled()
     : isolatedProfileReady = false,
       authentication = AgentAuthenticationStatus.unknown,
       mcpServerCount = null,
-      noMcpStartupEvents = true;
+      noMcpStartupEvents = true,
+      failureCategory = 'not_installed',
+      failedProbeStage = 'installation',
+      detectedMcpServerNames = const <String>[],
+      mcpStartupNotificationCount = 0;
 
-  const CodexRuntimeReadiness.profileFailure()
+  const CodexRuntimeReadiness.profileFailure(String this.failureCategory)
     : isolatedProfileReady = false,
       authentication = AgentAuthenticationStatus.unknown,
       mcpServerCount = null,
-      noMcpStartupEvents = false;
+      noMcpStartupEvents = false,
+      failedProbeStage = 'runtime_probe',
+      detectedMcpServerNames = const <String>[],
+      mcpStartupNotificationCount = 0;
 
   final bool isolatedProfileReady;
   final AgentAuthenticationStatus authentication;
   final int? mcpServerCount;
   final bool noMcpStartupEvents;
+  final String? failureCategory;
+  final String? failedProbeStage;
+  final List<String> detectedMcpServerNames;
+  final int mcpStartupNotificationCount;
 
   bool get canRun =>
       isolatedProfileReady &&
@@ -405,7 +438,8 @@ class CodexRuntimeReadiness {
       mcpServerCount == 0 &&
       noMcpStartupEvents;
 
-  String get failureCategory {
+  String get effectiveFailureCategory {
+    if (failureCategory != null) return failureCategory!;
     if (!isolatedProfileReady) return 'isolated_profile_unavailable';
     if (authentication != AgentAuthenticationStatus.authenticated) {
       return 'isolated_login_required';
@@ -571,8 +605,12 @@ class _CodexAppServer {
     if (_model == null) throw const _CodexFailure('no_supported_model');
   }
 
-  bool _mcpStartupEventSeen = false;
-  bool get noMcpStartupEvents => !_mcpStartupEventSeen;
+  final List<String> _detectedMcpServerNames = <String>[];
+  int _mcpStartupNotificationCount = 0;
+  bool get noMcpStartupEvents => _detectedMcpServerNames.isEmpty;
+  List<String> get detectedMcpServerNames =>
+      List<String>.unmodifiable(_detectedMcpServerNames);
+  int get mcpStartupNotificationCount => _mcpStartupNotificationCount;
 
   Future<int> mcpServerCount() async {
     final response = await _request('mcpServerStatus/list', <String, Object?>{
@@ -676,7 +714,19 @@ class _CodexAppServer {
       return;
     }
     if (message['method'] == 'mcpServer/startupStatus/updated') {
-      _mcpStartupEventSeen = true;
+      _mcpStartupNotificationCount++;
+      final params = message['params'] as Map?;
+      final server =
+          params?['server'] ??
+          params?['serverName'] ??
+          params?['name'] ??
+          params?['id'];
+      final name = server?.toString();
+      if (name != null &&
+          name.isNotEmpty &&
+          !_detectedMcpServerNames.contains(name)) {
+        _detectedMcpServerNames.add(name);
+      }
       return;
     }
     if (message['method'] == 'turn/completed') {

@@ -26,8 +26,15 @@ class AppCommandContext {
 
 class CancellationToken {
   bool _cancelled = false;
+  final Completer<void> _completion = Completer<void>();
   bool get isCancelled => _cancelled;
-  void cancel() => _cancelled = true;
+  Future<void> get cancelled => _completion.future;
+  void cancel() {
+    if (_cancelled) return;
+    _cancelled = true;
+    _completion.complete();
+  }
+
   void throwIfCancelled() {
     if (_cancelled) throw const AppCommandException('cancelled');
   }

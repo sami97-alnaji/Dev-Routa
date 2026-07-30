@@ -21,6 +21,7 @@ class ApprovalUseResult {
 
 class InMemoryApprovalGrantStore {
   final Map<String, ApprovalGrant> _grants = <String, ApprovalGrant>{};
+  final Set<String> _consumed = <String>{};
   void add(ApprovalGrant grant) {
     if (_grants.containsKey(grant.approvalId))
       throw StateError('duplicate_approval');
@@ -40,7 +41,7 @@ class InMemoryApprovalGrantStore {
     final grant = _grants[approvalId];
     if (grant == null)
       return const ApprovalUseResult.rejected(ApprovalRejection.missing);
-    if (grant.used)
+    if (_consumed.contains(grant.approvalId))
       return const ApprovalUseResult.rejected(
         ApprovalRejection.alreadyConsumed,
       );
@@ -55,7 +56,7 @@ class InMemoryApprovalGrantStore {
       return const ApprovalUseResult.rejected(ApprovalRejection.scopeMismatch);
     if (grant.risk != risk)
       return const ApprovalUseResult.rejected(ApprovalRejection.riskMismatch);
-    grant.used = true;
+    _consumed.add(grant.approvalId);
     return const ApprovalUseResult.allowed();
   }
 }

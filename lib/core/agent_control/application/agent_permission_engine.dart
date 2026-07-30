@@ -56,21 +56,4 @@ class AgentPermissionEngine {
       );
     return const PermissionDecision(true);
   }
-
-  bool consume(
-    ApprovalGrant? grant,
-    AgentToolCallRequest call,
-    AgentToolDefinition tool,
-    DateTime now,
-  ) {
-    if (grant == null || grant.used || !now.isBefore(grant.expiresAt))
-      return false;
-    if (grant.runId != (call.input['runId'] as String? ?? '') ||
-        grant.toolName != tool.name ||
-        grant.workspaceId != call.workspaceId ||
-        grant.environmentId != call.environmentId)
-      return false;
-    grant.used = true;
-    return true;
-  }
 }

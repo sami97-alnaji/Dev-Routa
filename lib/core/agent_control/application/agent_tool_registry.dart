@@ -1,4 +1,12 @@
 import '../domain/agent_models.dart';
+import 'dart:convert';
+
+enum AgentToolAvailability { available, unavailableInFoundation }
+
+abstract interface class AgentToolCodec<T> {
+  T decode(Map<String, Object?> input);
+  Map<String, Object?> encode(T value);
+}
 
 typedef ToolExecutor =
     Future<Map<String, Object?>> Function(Map<String, Object?> input);
@@ -17,6 +25,12 @@ class AgentToolDefinition {
     required this.idempotency,
     required this.validator,
     required this.execute,
+    required this.maximumInputBytes,
+    required this.maximumOutputBytes,
+    required this.allowedInputFields,
+    required this.rejectUnknownFields,
+    required this.availability,
+    this.productionRestriction = true,
   });
   final String name;
   final String version;
@@ -29,6 +43,16 @@ class AgentToolDefinition {
   final AgentIdempotency idempotency;
   final ToolValidator validator;
   final ToolExecutor execute;
+  final int maximumInputBytes;
+  final int maximumOutputBytes;
+  final Set<String> allowedInputFields;
+  final bool rejectUnknownFields;
+  final AgentToolAvailability availability;
+  final bool productionRestriction;
+  bool accepts(Map<String, Object?> input) =>
+      validator(input) &&
+      utf8.encode(jsonEncode(input)).length <= maximumInputBytes &&
+      (!rejectUnknownFields || input.keys.every(allowedInputFields.contains));
 }
 
 class AgentToolRegistry {
@@ -49,8 +73,10 @@ class AgentToolRegistry {
       AgentRisk risk,
       AgentPermissionMode permission,
       bool approval,
-      Map<String, Object?> output,
-    ) => registry.register(
+      Map<String, Object?> output, {
+      AgentIdempotency idempotency = AgentIdempotency.idempotent,
+      AgentToolAvailability availability = AgentToolAvailability.available,
+    }) => registry.register(
       AgentToolDefinition(
         name: name,
         version: '1',
@@ -60,10 +86,15 @@ class AgentToolRegistry {
         requiresApproval: approval,
         timeout: const Duration(seconds: 5),
         cancellable: true,
-        idempotency: AgentIdempotency.idempotent,
+        idempotency: idempotency,
         validator: (input) =>
             !input.containsKey('apiKey') && !input.containsKey('token'),
         execute: (_) async => output,
+        maximumInputBytes: 16384,
+        maximumOutputBytes: 65536,
+        allowedInputFields: const <String>{},
+        rejectUnknownFields: true,
+        availability: availability,
       ),
     );
     add(
@@ -93,6 +124,7 @@ class AgentToolRegistry {
       AgentPermissionMode.draftEditor,
       false,
       <String, Object?>{'draft': 'created'},
+      idempotency: AgentIdempotency.nonIdempotent,
     );
     add(
       'grpc.invoke.preview',
@@ -106,7 +138,8 @@ class AgentToolRegistry {
       AgentRisk.networkExecuting,
       AgentPermissionMode.approvedOperator,
       true,
-      <String, Object?>{'blocked': true},
+      <String, Object?>{},
+      availability: AgentToolAvailability.unavailableInFoundation,
     );
     return registry;
   }

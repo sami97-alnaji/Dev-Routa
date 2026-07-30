@@ -161,8 +161,7 @@ void main() {
         ]),
       );
       final runner = FakeAgentProcessRunner();
-      await expectLater(
-        runner.run(
+      final rejected = await runner.run(
           const AgentProcessRequest(
             executablePath: 'cmd.exe',
             arguments: <String>['/c', 'bad'],
@@ -172,9 +171,9 @@ void main() {
             maximumStdoutBytes: 4,
             maximumStderrBytes: 4,
           ),
-        ),
-        throwsA(isA<AppCommandException>()),
-      );
+        );
+      expect(rejected.status, AgentProcessStatus.policyRejected);
+      expect(rejected.failureCategory, 'invalidOperationId');
     },
   );
   test('fake adapter is the only executable foundation provider', () async {

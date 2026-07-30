@@ -35,7 +35,7 @@ enum AgentPermissionMode {
   productionRestricted,
 }
 
-enum AgentRunStatus { running, completed, cancelled, failed }
+enum AgentRunStatus { running, completed, cancelled, failed, timedOut }
 
 enum AgentIdempotency { idempotent, nonIdempotent, unknown }
 
@@ -208,7 +208,6 @@ class ApprovalGrant extends ApprovalRequest {
     required this.toolVersion,
   });
   final String toolVersion;
-  bool used = false;
 }
 
 class AgentAuditEntry {

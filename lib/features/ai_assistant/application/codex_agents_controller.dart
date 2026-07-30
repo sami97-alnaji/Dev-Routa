@@ -12,7 +12,9 @@ class CodexAgentsService {
 }
 
 class CodexAgentsController extends ChangeNotifier {
-  CodexAgentsController(this._adapter);
+  CodexAgentsController(this._adapter) {
+    _signInSubscription = _adapter.signInEvents.listen(_applySignInProgress);
+  }
   final CodexSubscriptionAdapter _adapter;
   AgentInstallationStatus installation = AgentInstallationStatus.unknown;
   AgentAuthenticationStatus authentication = AgentAuthenticationStatus.unknown;
@@ -23,8 +25,12 @@ class CodexAgentsController extends ChangeNotifier {
   String? lastTool;
   String? lastResult;
   String? lastFailure;
+  String? authenticationInstructions;
+  String? verificationUrl;
+  String? deviceCode;
   final List<String> audit = <String>[];
   AgentRunHandle? _active;
+  StreamSubscription<OfficialSignInProgress>? _signInSubscription;
 
   Future<void> refresh() async {
     installation = await _adapter.detectInstallation();
@@ -37,6 +43,10 @@ class CodexAgentsController extends ChangeNotifier {
   Future<void> openOfficialSignIn() async {
     final result = await _adapter.launchOfficialSignIn();
     lastFailure = result.category;
+    authenticationInstructions = result.instructions;
+    verificationUrl = result.verificationUrl;
+    deviceCode = result.deviceCode;
+    lifecycle = result.launched ? 'awaiting_user_verification' : 'failed';
     _audit(
       result.launched
           ? 'official sign-in opened'
@@ -94,11 +104,32 @@ class CodexAgentsController extends ChangeNotifier {
 
   Future<void> cancel() async {
     final active = _active;
-    if (active == null) return;
+    if (active == null) {
+      await _adapter.cancelOfficialSignIn();
+      return;
+    }
     lifecycle = 'cancelling';
     _audit('cancellation requested');
     notifyListeners();
     await active.cancel();
+  }
+
+  void _applySignInProgress(OfficialSignInProgress progress) {
+    lifecycle = progress.lifecycle;
+    authenticationInstructions =
+        progress.instructions ?? authenticationInstructions;
+    verificationUrl = progress.verificationUrl ?? verificationUrl;
+    deviceCode = progress.deviceCode ?? deviceCode;
+    lastFailure = progress.failureCategory;
+    _audit('login ${progress.lifecycle}');
+    if (progress.lifecycle == 'authenticated') unawaited(refresh());
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _signInSubscription?.cancel();
+    super.dispose();
   }
 
   void _audit(String value) {

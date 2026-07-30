@@ -30,6 +30,12 @@ class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
   final CodexExecutableLocator _locator;
   final CodexIsolatedRuntime _runtime;
   final Map<String, _CodexRunHandle> _runs = <String, _CodexRunHandle>{};
+  final StreamController<OfficialSignInProgress> _signInEvents =
+      StreamController<OfficialSignInProgress>.broadcast();
+  Process? _loginProcess;
+  bool _verificationUrlOpened = false;
+
+  Stream<OfficialSignInProgress> get signInEvents => _signInEvents.stream;
 
   @override
   String get providerId => 'codex';
@@ -117,17 +123,66 @@ class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
         category: 'not_installed',
       );
     }
+    if (_loginProcess != null) {
+      return const OfficialSignInLaunchResult(
+        launched: true,
+        category: 'official_sign_in_active',
+      );
+    }
     try {
       final environment = await _runtime.environment();
-      await Process.start(
+      final process = await Process.start(
         executable,
         const <String>['login', '--device-auth'],
         environment: environment,
         includeParentEnvironment: false,
         runInShell: false,
-        mode: ProcessStartMode.detached,
       );
-      return const OfficialSignInLaunchResult(launched: true);
+      _loginProcess = process;
+      _verificationUrlOpened = false;
+      final firstOutput = Completer<CodexDeviceAuthOutput>();
+      final output = StringBuffer();
+      void onLine(String raw) {
+        if (output.length < 2048) output.writeln(SecretMasker.redactText(raw));
+        final parsed = CodexDeviceAuthOutput.parse(output.toString());
+        _signInEvents.add(
+          OfficialSignInProgress(
+            lifecycle: 'awaiting_user_verification',
+            instructions: parsed.instructions,
+            verificationUrl: parsed.verificationUrl,
+            deviceCode: parsed.deviceCode,
+          ),
+        );
+        if (parsed.verificationUrl != null && !_verificationUrlOpened) {
+          _verificationUrlOpened = true;
+          unawaited(
+            Process.start('explorer.exe', <String>[
+              parsed.verificationUrl!,
+            ], runInShell: false),
+          );
+        }
+        if (!firstOutput.isCompleted) firstOutput.complete(parsed);
+      }
+
+      process.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen(onLine);
+      process.stderr
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .listen(onLine);
+      unawaited(_watchLoginExit(process));
+      final parsed = await firstOutput.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: CodexDeviceAuthOutput.empty,
+      );
+      return OfficialSignInLaunchResult(
+        launched: true,
+        instructions: parsed.instructions,
+        verificationUrl: parsed.verificationUrl,
+        deviceCode: parsed.deviceCode,
+      );
     } catch (_) {
       return const OfficialSignInLaunchResult(
         launched: false,
@@ -244,6 +299,32 @@ class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
   @override
   Future<void> disconnect() async {
     await Future.wait(_runs.values.map((run) => run.cancel()));
+    await cancelOfficialSignIn();
+  }
+
+  Future<void> cancelOfficialSignIn() async {
+    final process = _loginProcess;
+    if (process == null) return;
+    process.kill();
+    _loginProcess = null;
+    _signInEvents.add(const OfficialSignInProgress(lifecycle: 'cancelled'));
+  }
+
+  Future<void> _watchLoginExit(Process process) async {
+    final exitCode = await process.exitCode;
+    if (!identical(_loginProcess, process)) return;
+    _loginProcess = null;
+    final status = await authenticationStatus();
+    _signInEvents.add(
+      status == AgentAuthenticationStatus.authenticated
+          ? const OfficialSignInProgress(lifecycle: 'authenticated')
+          : OfficialSignInProgress(
+              lifecycle: 'failed',
+              failureCategory: exitCode == 0
+                  ? 'isolated_login_required'
+                  : 'official_sign_in_failed',
+            ),
+    );
   }
 }
 
@@ -341,6 +422,34 @@ class CodexRuntimeReadiness {
     }
     return 'third_party_mcp_detected';
   }
+}
+
+class CodexDeviceAuthOutput {
+  const CodexDeviceAuthOutput({
+    this.instructions,
+    this.verificationUrl,
+    this.deviceCode,
+  });
+
+  factory CodexDeviceAuthOutput.parse(String output) {
+    final sanitized = SecretMasker.redactText(output).trim();
+    final url = RegExp(r'https://[^\s]+').firstMatch(sanitized)?.group(0);
+    final code = RegExp(
+      r'(?:device|user|verification)\s*code\s*(?:is|:)?\s*([A-Z0-9]{4,}(?:-[A-Z0-9]{4,})*)',
+      caseSensitive: false,
+    ).firstMatch(sanitized)?.group(1);
+    return CodexDeviceAuthOutput(
+      instructions: sanitized.isEmpty ? null : sanitized,
+      verificationUrl: url,
+      deviceCode: code,
+    );
+  }
+
+  static CodexDeviceAuthOutput empty() => const CodexDeviceAuthOutput();
+
+  final String? instructions;
+  final String? verificationUrl;
+  final String? deviceCode;
 }
 
 class CodexExecutableLocator {

@@ -62,9 +62,33 @@ class AgentCapabilities {
 }
 
 class OfficialSignInLaunchResult {
-  const OfficialSignInLaunchResult({required this.launched, this.category});
+  const OfficialSignInLaunchResult({
+    required this.launched,
+    this.category,
+    this.instructions,
+    this.verificationUrl,
+    this.deviceCode,
+  });
   final bool launched;
   final String? category;
+  final String? instructions;
+  final String? verificationUrl;
+  final String? deviceCode;
+}
+
+class OfficialSignInProgress {
+  const OfficialSignInProgress({
+    required this.lifecycle,
+    this.instructions,
+    this.verificationUrl,
+    this.deviceCode,
+    this.failureCategory,
+  });
+  final String lifecycle;
+  final String? instructions;
+  final String? verificationUrl;
+  final String? deviceCode;
+  final String? failureCategory;
 }
 
 class AgentRunRequest {

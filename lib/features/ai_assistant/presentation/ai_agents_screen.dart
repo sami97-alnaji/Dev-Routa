@@ -65,6 +65,15 @@ class AiAgentsScreen extends StatelessWidget {
                   _row('Last sanitized result', controller.lastResult!),
                 if (controller.lastFailure != null)
                   _row('Last typed failure', controller.lastFailure!),
+                if (controller.authenticationInstructions != null)
+                  _row(
+                    'Authentication instructions',
+                    controller.authenticationInstructions!,
+                  ),
+                if (controller.verificationUrl != null)
+                  _row('Verification URL', controller.verificationUrl!),
+                if (controller.deviceCode != null)
+                  _row('User/device code', controller.deviceCode!),
                 const SizedBox(height: 16),
                 Wrap(
                   spacing: 8,

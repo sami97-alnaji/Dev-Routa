@@ -16,6 +16,8 @@ class CodexAgentsController extends ChangeNotifier {
   final CodexSubscriptionAdapter _adapter;
   AgentInstallationStatus installation = AgentInstallationStatus.unknown;
   AgentAuthenticationStatus authentication = AgentAuthenticationStatus.unknown;
+  CodexRuntimeReadiness readiness =
+      const CodexRuntimeReadiness.profileFailure();
   String lifecycle = 'idle';
   String bridgeStatus = 'dynamic tools (2)';
   String? lastTool;
@@ -26,7 +28,8 @@ class CodexAgentsController extends ChangeNotifier {
 
   Future<void> refresh() async {
     installation = await _adapter.detectInstallation();
-    authentication = await _adapter.authenticationStatus();
+    readiness = await _adapter.runtimeReadiness();
+    authentication = readiness.authentication;
     _audit('status refreshed');
     notifyListeners();
   }
@@ -43,7 +46,7 @@ class CodexAgentsController extends ChangeNotifier {
   }
 
   Future<void> runConnectionTest(String workspaceId) async {
-    if (_active != null) return;
+    if (_active != null || !readiness.canRun) return;
     lifecycle = 'starting';
     lastFailure = null;
     lastResult = null;

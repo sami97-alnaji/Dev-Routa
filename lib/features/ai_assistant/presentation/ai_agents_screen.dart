@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/agent_control/domain/agent_models.dart';
 import '../application/codex_agents_controller.dart';
 
 class AiAgentsScreen extends StatelessWidget {
@@ -31,6 +32,24 @@ class AiAgentsScreen extends StatelessWidget {
                   'ChatGPT authentication status',
                   controller.authentication.name,
                 ),
+                _row(
+                  'Isolated profile status',
+                  controller.readiness.isolatedProfileReady
+                      ? 'ready'
+                      : 'not ready',
+                ),
+                _row(
+                  'Isolated ChatGPT login status',
+                  controller.readiness.authentication ==
+                          AgentAuthenticationStatus.authenticated
+                      ? 'authenticated'
+                      : 'isolated_login_required',
+                ),
+                _row(
+                  'Third-party MCP servers',
+                  controller.readiness.mcpServerCount?.toString() ??
+                      'not checked',
+                ),
                 _row('Current lifecycle state', controller.lifecycle),
                 _row('Tool bridge status', controller.bridgeStatus),
                 _row(
@@ -38,7 +57,7 @@ class AiAgentsScreen extends StatelessWidget {
                   '2: app.capabilities, grpc.history.search',
                 ),
                 _row('Sandbox', 'read-only'),
-                _row('External network', 'disabled for the agent sandbox'),
+                _row('External network', 'Codex official service only'),
                 _row('API key', 'not used'),
                 if (controller.lastTool != null)
                   _row('Last tool called', controller.lastTool!),
@@ -60,7 +79,7 @@ class AiAgentsScreen extends StatelessWidget {
                       child: const Text('Open official sign-in'),
                     ),
                     FilledButton(
-                      onPressed: controller.installation.name == 'installed'
+                      onPressed: controller.readiness.canRun
                           ? () => controller.runConnectionTest(workspaceId)
                           : null,
                       child: const Text('Run connection test'),

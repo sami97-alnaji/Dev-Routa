@@ -22,9 +22,21 @@ void main() {
     expect(find.text('Detect Codex'), findsOneWidget);
     expect(find.text('Open official sign-in'), findsOneWidget);
     expect(find.text('Run connection test'), findsOneWidget);
+    expect(find.text('Isolated profile status'), findsOneWidget);
+    expect(find.text('Isolated ChatGPT login status'), findsOneWidget);
+    expect(find.text('Third-party MCP servers'), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Run connection test'),
+          )
+          .onPressed,
+      isNull,
+    );
     expect(find.textContaining('app.capabilities'), findsWidgets);
     expect(find.textContaining('grpc.history.search'), findsWidgets);
     expect(find.text('API key'), findsOneWidget);
     expect(find.text('not used'), findsOneWidget);
+    expect(find.text('Codex official service only'), findsOneWidget);
   });
 }

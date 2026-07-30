@@ -20,12 +20,15 @@ class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
     required AgentOrchestrator Function(String workspaceId)
     orchestratorForWorkspace,
     CodexExecutableLocator? locator,
+    CodexIsolatedRuntime? runtime,
   }) : _orchestratorForWorkspace = orchestratorForWorkspace,
-       _locator = locator ?? CodexExecutableLocator();
+       _locator = locator ?? CodexExecutableLocator(),
+       _runtime = runtime ?? CodexIsolatedRuntime();
 
   final AgentOrchestrator Function(String workspaceId)
   _orchestratorForWorkspace;
   final CodexExecutableLocator _locator;
+  final CodexIsolatedRuntime _runtime;
   final Map<String, _CodexRunHandle> _runs = <String, _CodexRunHandle>{};
 
   @override
@@ -41,16 +44,63 @@ class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
   Future<AgentAuthenticationStatus> authenticationStatus() async {
     final executable = _locator.discover();
     if (executable == null) return AgentAuthenticationStatus.unknown;
-    final result = await Process.run(
-      executable,
-      const <String>['login', 'status'],
-      environment: _safeEnvironment(),
-      runInShell: false,
-    );
-    final text = SecretMasker.redactText('${result.stdout}\n${result.stderr}');
-    return text.contains('Logged in using ChatGPT')
-        ? AgentAuthenticationStatus.authenticated
-        : AgentAuthenticationStatus.unauthenticated;
+    try {
+      final result = await Process.run(
+        executable,
+        const <String>['login', 'status'],
+        environment: await _runtime.environment(),
+        includeParentEnvironment: false,
+        runInShell: false,
+      );
+      final text = SecretMasker.redactText(
+        '${result.stdout}\n${result.stderr}',
+      );
+      return text.contains('Logged in using ChatGPT')
+          ? AgentAuthenticationStatus.authenticated
+          : AgentAuthenticationStatus.unauthenticated;
+    } catch (_) {
+      return AgentAuthenticationStatus.unknown;
+    }
+  }
+
+  /// Proves that the isolated profile has no configured third-party MCP server.
+  Future<CodexRuntimeReadiness> runtimeReadiness() async {
+    final executable = _locator.discover();
+    if (executable == null) return const CodexRuntimeReadiness.notInstalled();
+    try {
+      await _runtime.ensure();
+      final authentication = await authenticationStatus();
+      if (authentication != AgentAuthenticationStatus.authenticated) {
+        return CodexRuntimeReadiness(
+          isolatedProfileReady: true,
+          authentication: authentication,
+          mcpServerCount: null,
+          noMcpStartupEvents: true,
+        );
+      }
+      final session = await Directory.systemTemp.createTemp('devroute-codex-');
+      _CodexAppServer? server;
+      try {
+        server = await _CodexAppServer.start(
+          executable,
+          session.path,
+          await _runtime.environment(),
+        );
+        await server.initialize();
+        final count = await server.mcpServerCount();
+        return CodexRuntimeReadiness(
+          isolatedProfileReady: true,
+          authentication: authentication,
+          mcpServerCount: count,
+          noMcpStartupEvents: server.noMcpStartupEvents,
+        );
+      } finally {
+        await server?.close();
+        await session.delete(recursive: true);
+      }
+    } catch (_) {
+      return const CodexRuntimeReadiness.profileFailure();
+    }
   }
 
   @override
@@ -68,10 +118,12 @@ class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
       );
     }
     try {
+      final environment = await _runtime.environment();
       await Process.start(
         executable,
         const <String>['login', '--device-auth'],
-        environment: _safeEnvironment(),
+        environment: environment,
+        includeParentEnvironment: false,
         runInShell: false,
         mode: ProcessStartMode.detached,
       );
@@ -95,12 +147,21 @@ class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
   Future<void> _run(AgentRunRequest request, _CodexRunHandle handle) async {
     final executable = _locator.discover();
     if (executable == null) return handle.fail('not_installed');
+    final readiness = await runtimeReadiness();
+    if (!readiness.canRun) return handle.fail(readiness.failureCategory);
     final session = await Directory.systemTemp.createTemp('devroute-codex-');
     _CodexAppServer? server;
     try {
-      server = await _CodexAppServer.start(executable, session.path);
+      server = await _CodexAppServer.start(
+        executable,
+        session.path,
+        await _runtime.environment(),
+      );
       handle.attach(server);
       await server.initialize();
+      if (await server.mcpServerCount() != 0 || !server.noMcpStartupEvents) {
+        throw const _CodexFailure('third_party_mcp_detected');
+      }
       final threadId = await server.startRestrictedThread();
       await server.startTurn(
         threadId,
@@ -115,7 +176,15 @@ class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
       final result = await server.completed.timeout(
         const Duration(seconds: 60),
       );
-      handle.complete(result);
+      handle.complete(
+        server.noMcpStartupEvents
+            ? result
+            : const AgentRunResult(
+                status: AgentRunStatus.failed,
+                results: <AgentToolCallResult>[],
+                failureCategory: 'third_party_mcp_detected',
+              ),
+      );
     } on TimeoutException {
       handle.fail('app_server_timeout');
     } on _CodexFailure catch (error) {
@@ -176,18 +245,101 @@ class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
   Future<void> disconnect() async {
     await Future.wait(_runs.values.map((run) => run.cancel()));
   }
+}
 
-  Map<String, String> _safeEnvironment() {
-    String value(String key) => Platform.environment[key] ?? '';
+/// Owns DevRoute's profile without inspecting, copying, or linking global Codex
+/// credentials. Codex itself writes the official login only after user consent.
+class CodexIsolatedRuntime {
+  CodexIsolatedRuntime({Directory? homeDirectory})
+    : _homeDirectory = homeDirectory;
+
+  static const String configToml = '''cli_auth_credentials_store = "file"
+approval_policy = "never"
+sandbox_mode = "read-only"
+allow_login_shell = false
+
+[tools]
+web_search = false
+
+[shell_environment_policy]
+inherit = "none"
+''';
+
+  final Directory? _homeDirectory;
+
+  Directory get homeDirectory {
+    if (_homeDirectory != null) return _homeDirectory;
+    final localAppData = Platform.environment['LOCALAPPDATA'];
+    if (localAppData == null || localAppData.isEmpty) {
+      throw const _CodexFailure('isolated_profile_unavailable');
+    }
+    return Directory('$localAppData\\DevRoute\\codex-home');
+  }
+
+  Future<void> ensure() async {
+    final directory = homeDirectory;
+    await directory.create(recursive: true);
+    await File(
+      '${directory.path}${Platform.pathSeparator}config.toml',
+    ).writeAsString(configToml, flush: true);
+  }
+
+  Future<Map<String, String>> environment() async {
+    await ensure();
+    String required(String key) {
+      final value = Platform.environment[key];
+      if (value == null || value.isEmpty) {
+        throw _CodexFailure('isolated_environment_unavailable');
+      }
+      return value;
+    }
+
     return <String, String>{
-      'SystemRoot': value('SystemRoot'),
-      'ComSpec': value('ComSpec'),
-      'APPDATA': value('APPDATA'),
-      'LOCALAPPDATA': value('LOCALAPPDATA'),
-      'USERPROFILE': value('USERPROFILE'),
-      'TEMP': value('TEMP'),
-      'TMP': value('TMP'),
-    }..removeWhere((_, value) => value.isEmpty);
+      'CODEX_HOME': homeDirectory.path,
+      'SystemRoot': required('SystemRoot'),
+      'TEMP': required('TEMP'),
+      'TMP': required('TMP'),
+    };
+  }
+}
+
+class CodexRuntimeReadiness {
+  const CodexRuntimeReadiness({
+    required this.isolatedProfileReady,
+    required this.authentication,
+    required this.mcpServerCount,
+    required this.noMcpStartupEvents,
+  });
+
+  const CodexRuntimeReadiness.notInstalled()
+    : isolatedProfileReady = false,
+      authentication = AgentAuthenticationStatus.unknown,
+      mcpServerCount = null,
+      noMcpStartupEvents = true;
+
+  const CodexRuntimeReadiness.profileFailure()
+    : isolatedProfileReady = false,
+      authentication = AgentAuthenticationStatus.unknown,
+      mcpServerCount = null,
+      noMcpStartupEvents = false;
+
+  final bool isolatedProfileReady;
+  final AgentAuthenticationStatus authentication;
+  final int? mcpServerCount;
+  final bool noMcpStartupEvents;
+
+  bool get canRun =>
+      isolatedProfileReady &&
+      authentication == AgentAuthenticationStatus.authenticated &&
+      mcpServerCount == 0 &&
+      noMcpStartupEvents;
+
+  String get failureCategory {
+    if (!isolatedProfileReady) return 'isolated_profile_unavailable';
+    if (authentication != AgentAuthenticationStatus.authenticated) {
+      return 'isolated_login_required';
+    }
+    return 'third_party_mcp_detected';
   }
 }
 
@@ -220,34 +372,18 @@ class _CodexAppServer {
   String _stderrText = '';
   Future<AgentRunResult> get completed => _completed.future;
 
-  static Future<_CodexAppServer> start(String executable, String cwd) async {
+  static Future<_CodexAppServer> start(
+    String executable,
+    String cwd,
+    Map<String, String> environment,
+  ) async {
     final process = await Process.start(
       executable,
-      const <String>[
-        'app-server',
-        '--stdio',
-        '-c',
-        'approval_policy="never"',
-        '-c',
-        'sandbox_mode="read-only"',
-        '-c',
-        'allow_login_shell=false',
-        '-c',
-        'tools.web_search=false',
-        '-c',
-        'shell_environment_policy.inherit="none"',
-      ],
+      const <String>['app-server', '--stdio'],
       workingDirectory: cwd,
+      includeParentEnvironment: false,
       runInShell: false,
-      environment: <String, String>{
-        'SystemRoot': Platform.environment['SystemRoot'] ?? '',
-        'ComSpec': Platform.environment['ComSpec'] ?? '',
-        'APPDATA': Platform.environment['APPDATA'] ?? '',
-        'LOCALAPPDATA': Platform.environment['LOCALAPPDATA'] ?? '',
-        'USERPROFILE': Platform.environment['USERPROFILE'] ?? '',
-        'TEMP': Platform.environment['TEMP'] ?? '',
-        'TMP': Platform.environment['TMP'] ?? '',
-      }..removeWhere((_, value) => value.isEmpty),
+      environment: environment,
     );
     final server = _CodexAppServer(process, cwd);
     server._stdout = process.stdout
@@ -258,9 +394,10 @@ class _CodexAppServer {
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .listen((line) {
-          server._stderrText = SecretMasker.redactText(
-            '${server._stderrText}\n$line',
-          ).substring(0, 2048);
+          final text = SecretMasker.redactText('${server._stderrText}\n$line');
+          server._stderrText = text.length <= 2048
+              ? text
+              : text.substring(0, 2048);
         });
     process.exitCode.then((_) {
       if (!server._completed.isCompleted) {
@@ -299,6 +436,18 @@ class _CodexAppServer {
       _model = selected['model'] as String?;
     }
     if (_model == null) throw const _CodexFailure('no_supported_model');
+  }
+
+  bool _mcpStartupEventSeen = false;
+  bool get noMcpStartupEvents => !_mcpStartupEventSeen;
+
+  Future<int> mcpServerCount() async {
+    final response = await _request('mcpServerStatus/list', <String, Object?>{
+      'limit': 100,
+      'detail': 'toolsAndAuthOnly',
+    });
+    final data = response['data'];
+    return data is List ? data.length : 0;
   }
 
   Future<String> startRestrictedThread() async {
@@ -391,6 +540,10 @@ class _CodexAppServer {
     }
     if (message['method'] == 'item/tool/call') {
       unawaited(_handleToolCall(message));
+      return;
+    }
+    if (message['method'] == 'mcpServer/startupStatus/updated') {
+      _mcpStartupEventSeen = true;
       return;
     }
     if (message['method'] == 'turn/completed') {

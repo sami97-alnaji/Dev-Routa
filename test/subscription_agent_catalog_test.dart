@@ -18,7 +18,7 @@ void main() {
     expect(catalog.require('fakeTestAgent').executableAllowed, isTrue);
     expect(
       catalog.require('codex').supportStatus,
-      AgentProviderSupportStatus.contractOnly,
+      AgentProviderSupportStatus.supportedForTesting,
     );
     expect(catalog.require('claudeCode').executable, isFalse);
     expect(

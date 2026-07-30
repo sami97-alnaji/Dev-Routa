@@ -140,7 +140,7 @@ void main() {
 
   test('provider denials never execute a tool and are audited', () async {
     var invoked = 0; final registry = AgentToolRegistry()..register(tool('read', (_) async { invoked++; return {}; }));
-    for (final item in {'unknown': 'unknown_provider', 'codex': 'provider_contract_only', 'claudeCode': 'provider_contract_only', 'googleOfficialClient': 'provider_verification_required'}.entries) {
+    for (final item in {'unknown': 'unknown_provider', 'claudeCode': 'provider_contract_only', 'googleOfficialClient': 'provider_verification_required'}.entries) {
       final audit = InMemoryAgentAuditSink(); final result = await subject(registry, audit).startRun(providerId: item.key, request: request(item.key, [call('read')]), mode: AgentPermissionMode.observe, production: false).result;
       expect(result.failureCategory, item.value); expect(phases(audit), ['run.received', 'run.started', 'run.provider_denied', 'run.failed']);
     }

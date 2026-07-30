@@ -1,0 +1,648 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:uuid/uuid.dart';
+
+import '../../../features/grpc/data/grpc_persistence_repository.dart';
+import '../../security/secret_masker.dart';
+import '../application/agent_orchestrator.dart';
+import '../application/agent_tool_registry.dart';
+import '../application/app_command.dart';
+import '../application/app_command_bus.dart';
+import '../application/codex_agent_commands.dart';
+import '../domain/agent_models.dart';
+
+/// Windows-only adapter for the locally installed official Codex App Server.
+/// It never reads Codex credentials: the child client owns ChatGPT auth.
+class CodexSubscriptionAdapter implements SubscriptionAgentAdapter {
+  CodexSubscriptionAdapter({
+    required AgentOrchestrator Function(String workspaceId)
+    orchestratorForWorkspace,
+    CodexExecutableLocator? locator,
+  }) : _orchestratorForWorkspace = orchestratorForWorkspace,
+       _locator = locator ?? CodexExecutableLocator();
+
+  final AgentOrchestrator Function(String workspaceId)
+  _orchestratorForWorkspace;
+  final CodexExecutableLocator _locator;
+  final Map<String, _CodexRunHandle> _runs = <String, _CodexRunHandle>{};
+
+  @override
+  String get providerId => 'codex';
+
+  @override
+  Future<AgentInstallationStatus> detectInstallation() async =>
+      _locator.discover() == null
+      ? AgentInstallationStatus.notInstalled
+      : AgentInstallationStatus.installed;
+
+  @override
+  Future<AgentAuthenticationStatus> authenticationStatus() async {
+    final executable = _locator.discover();
+    if (executable == null) return AgentAuthenticationStatus.unknown;
+    final result = await Process.run(
+      executable,
+      const <String>['login', 'status'],
+      environment: _safeEnvironment(),
+      runInShell: false,
+    );
+    final text = SecretMasker.redactText('${result.stdout}\n${result.stderr}');
+    return text.contains('Logged in using ChatGPT')
+        ? AgentAuthenticationStatus.authenticated
+        : AgentAuthenticationStatus.unauthenticated;
+  }
+
+  @override
+  Future<AgentCapabilities> capabilities() async => const AgentCapabilities(
+    <String>{'app.capabilities', 'grpc.history.search', 'cancellation'},
+  );
+
+  @override
+  Future<OfficialSignInLaunchResult> launchOfficialSignIn() async {
+    final executable = _locator.discover();
+    if (executable == null) {
+      return const OfficialSignInLaunchResult(
+        launched: false,
+        category: 'not_installed',
+      );
+    }
+    try {
+      await Process.start(
+        executable,
+        const <String>['login', '--device-auth'],
+        environment: _safeEnvironment(),
+        runInShell: false,
+        mode: ProcessStartMode.detached,
+      );
+      return const OfficialSignInLaunchResult(launched: true);
+    } catch (_) {
+      return const OfficialSignInLaunchResult(
+        launched: false,
+        category: 'official_sign_in_launch_failed',
+      );
+    }
+  }
+
+  @override
+  AgentRunHandle startRun(AgentRunRequest request) {
+    final handle = _CodexRunHandle(request.runId);
+    _runs[request.runId] = handle;
+    unawaited(_run(request, handle));
+    return handle;
+  }
+
+  Future<void> _run(AgentRunRequest request, _CodexRunHandle handle) async {
+    final executable = _locator.discover();
+    if (executable == null) return handle.fail('not_installed');
+    final session = await Directory.systemTemp.createTemp('devroute-codex-');
+    _CodexAppServer? server;
+    try {
+      server = await _CodexAppServer.start(executable, session.path);
+      handle.attach(server);
+      await server.initialize();
+      final threadId = await server.startRestrictedThread();
+      await server.startTurn(
+        threadId,
+        const <String>[
+          'Call app_capabilities first.',
+          'Then call grpc_history_search.',
+          'Do not use any other DevRoute tool.',
+          'Return a short structured summary.',
+        ].join(' '),
+        (tool, arguments) => _dispatchTool(request, tool, arguments),
+      );
+      final result = await server.completed.timeout(
+        const Duration(seconds: 60),
+      );
+      handle.complete(result);
+    } on TimeoutException {
+      handle.fail('app_server_timeout');
+    } on _CodexFailure catch (error) {
+      handle.fail(error.category);
+    } catch (_) {
+      handle.fail('app_server_failure');
+    } finally {
+      await server?.close();
+      await session.delete(recursive: true);
+      _runs.remove(request.runId);
+    }
+  }
+
+  Future<Map<String, Object?>> _dispatchTool(
+    AgentRunRequest request,
+    String externalName,
+    Object? arguments,
+  ) async {
+    final tool = switch (externalName) {
+      'app_capabilities' => 'app.capabilities',
+      'grpc_history_search' => 'grpc.history.search',
+      _ => throw const _CodexFailure('unknown_dynamic_tool'),
+    };
+    if (arguments is! Map) throw const _CodexFailure('invalid_tool_input');
+    final run = await _orchestratorForWorkspace(request.workspaceId).run(
+      providerId: providerId,
+      request: AgentRunRequest(
+        runId: '${request.runId}:$tool',
+        workspaceId: request.workspaceId,
+        calls: <AgentToolCallRequest>[
+          AgentToolCallRequest(
+            toolName: tool,
+            input: const <String, Object?>{},
+            workspaceId: request.workspaceId,
+          ),
+        ],
+      ),
+      mode: AgentPermissionMode.observe,
+      production: false,
+      maximumSteps: 1,
+      maximumNetworkOperations: 0,
+    );
+    final call = run.results.singleOrNull;
+    if (run.status != AgentRunStatus.completed ||
+        call == null ||
+        !call.success) {
+      throw _CodexFailure(
+        call?.failureCategory ?? run.failureCategory ?? 'tool_failure',
+      );
+    }
+    return call.output;
+  }
+
+  @override
+  Future<void> cancelRun(String runId) async => _runs[runId]?.cancel();
+
+  @override
+  Future<void> disconnect() async {
+    await Future.wait(_runs.values.map((run) => run.cancel()));
+  }
+
+  Map<String, String> _safeEnvironment() {
+    String value(String key) => Platform.environment[key] ?? '';
+    return <String, String>{
+      'SystemRoot': value('SystemRoot'),
+      'ComSpec': value('ComSpec'),
+      'APPDATA': value('APPDATA'),
+      'LOCALAPPDATA': value('LOCALAPPDATA'),
+      'USERPROFILE': value('USERPROFILE'),
+      'TEMP': value('TEMP'),
+      'TMP': value('TMP'),
+    }..removeWhere((_, value) => value.isEmpty);
+  }
+}
+
+class CodexExecutableLocator {
+  String? discover() {
+    if (!Platform.isWindows) return null;
+    final appData = Platform.environment['APPDATA'];
+    if (appData == null) return null;
+    final path =
+        '$appData\\npm\\node_modules\\@openai\\codex\\node_modules\\@openai\\codex-win32-x64\\vendor\\x86_64-pc-windows-msvc\\bin\\codex.exe';
+    return File(path).existsSync() ? path : null;
+  }
+}
+
+class _CodexAppServer {
+  _CodexAppServer(this._process, this._cwd);
+  final Process _process;
+  final String _cwd;
+  final Map<int, Completer<Map<String, Object?>>> _requests =
+      <int, Completer<Map<String, Object?>>>{};
+  final Completer<AgentRunResult> _completed = Completer<AgentRunResult>();
+  late final StreamSubscription<String> _stdout;
+  late final StreamSubscription<String> _stderr;
+  int _nextId = 0;
+  String? _threadId;
+  String? _turnId;
+  String? _model;
+  final List<AgentToolCallResult> _toolResults = <AgentToolCallResult>[];
+  Future<Map<String, Object?>> Function(String, Object?)? _toolHandler;
+  String _stderrText = '';
+  Future<AgentRunResult> get completed => _completed.future;
+
+  static Future<_CodexAppServer> start(String executable, String cwd) async {
+    final process = await Process.start(
+      executable,
+      const <String>[
+        'app-server',
+        '--stdio',
+        '-c',
+        'approval_policy="never"',
+        '-c',
+        'sandbox_mode="read-only"',
+        '-c',
+        'allow_login_shell=false',
+        '-c',
+        'tools.web_search=false',
+        '-c',
+        'shell_environment_policy.inherit="none"',
+      ],
+      workingDirectory: cwd,
+      runInShell: false,
+      environment: <String, String>{
+        'SystemRoot': Platform.environment['SystemRoot'] ?? '',
+        'ComSpec': Platform.environment['ComSpec'] ?? '',
+        'APPDATA': Platform.environment['APPDATA'] ?? '',
+        'LOCALAPPDATA': Platform.environment['LOCALAPPDATA'] ?? '',
+        'USERPROFILE': Platform.environment['USERPROFILE'] ?? '',
+        'TEMP': Platform.environment['TEMP'] ?? '',
+        'TMP': Platform.environment['TMP'] ?? '',
+      }..removeWhere((_, value) => value.isEmpty),
+    );
+    final server = _CodexAppServer(process, cwd);
+    server._stdout = process.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen(server._onLine);
+    server._stderr = process.stderr
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen((line) {
+          server._stderrText = SecretMasker.redactText(
+            '${server._stderrText}\n$line',
+          ).substring(0, 2048);
+        });
+    process.exitCode.then((_) {
+      if (!server._completed.isCompleted) {
+        server._completed.complete(
+          AgentRunResult(
+            status: AgentRunStatus.failed,
+            results: const <AgentToolCallResult>[],
+            failureCategory: 'app_server_exited',
+          ),
+        );
+      }
+    });
+    return server;
+  }
+
+  Future<void> initialize() async {
+    await _request('initialize', <String, Object?>{
+      'clientInfo': <String, Object?>{
+        'name': 'devroute',
+        'title': 'DevRoute AI Agents',
+        'version': '0.4.0',
+      },
+      'capabilities': <String, Object?>{'experimentalApi': true},
+    });
+    _notify('initialized', const <String, Object?>{});
+    final models = await _request('model/list', const <String, Object?>{
+      'limit': 20,
+      'includeHidden': false,
+    });
+    final data = models['data'];
+    if (data is List) {
+      final selected = data.cast<Object?>().whereType<Map>().firstWhere(
+        (item) => item['isDefault'] == true && item['model'] is String,
+        orElse: () => const <String, Object?>{},
+      );
+      _model = selected['model'] as String?;
+    }
+    if (_model == null) throw const _CodexFailure('no_supported_model');
+  }
+
+  Future<String> startRestrictedThread() async {
+    final response = await _request('thread/start', <String, Object?>{
+      'ephemeral': true,
+      'cwd': _cwd,
+      'approvalPolicy': 'never',
+      'sandbox': 'read-only',
+      'model': _model,
+      // Verified against codex-cli 0.142.5 with experimentalApi during initialize.
+      'dynamicTools': <Object?>[
+        <String, Object?>{
+          'type': 'function',
+          'name': 'app_capabilities',
+          'description': 'Return sanitized DevRoute capabilities.',
+          'inputSchema': <String, Object?>{
+            'type': 'object',
+            'properties': <String, Object?>{},
+            'additionalProperties': false,
+          },
+        },
+        <String, Object?>{
+          'type': 'function',
+          'name': 'grpc_history_search',
+          'description': 'Return bounded sanitized gRPC history summary.',
+          'inputSchema': <String, Object?>{
+            'type': 'object',
+            'properties': <String, Object?>{},
+            'additionalProperties': false,
+          },
+        },
+      ],
+    });
+    final thread = response['thread'];
+    if (thread is! Map || thread['id'] is! String) {
+      throw const _CodexFailure('invalid_thread_response');
+    }
+    return _threadId = thread['id'] as String;
+  }
+
+  Future<void> startTurn(
+    String threadId,
+    String prompt,
+    Future<Map<String, Object?>> Function(String, Object?) toolHandler,
+  ) async {
+    _toolHandler = toolHandler;
+    final response = await _request('turn/start', <String, Object?>{
+      'threadId': threadId,
+      'input': <Object?>[
+        <String, Object?>{'type': 'text', 'text': prompt},
+      ],
+      'approvalPolicy': 'never',
+      'sandboxPolicy': <String, Object?>{
+        'type': 'readOnly',
+        'access': <String, Object?>{
+          'type': 'restricted',
+          'includePlatformDefaults': false,
+          'readableRoots': <Object?>[],
+        },
+      },
+    });
+    final turn = response['turn'];
+    if (turn is! Map || turn['id'] is! String) {
+      throw const _CodexFailure('invalid_turn_response');
+    }
+    _turnId = turn['id'] as String;
+  }
+
+  void _onLine(String line) {
+    Object? decoded;
+    try {
+      decoded = jsonDecode(line);
+    } catch (_) {
+      return;
+    }
+    if (decoded is! Map) return;
+    final message = decoded.cast<String, Object?>();
+    final id = message['id'];
+    if (id is int && _requests.containsKey(id)) {
+      final completer = _requests.remove(id)!;
+      if (message['error'] != null) {
+        completer.completeError(_CodexFailure('protocol_error'));
+      } else {
+        completer.complete(
+          (message['result'] as Map?)?.cast<String, Object?>() ??
+              const <String, Object?>{},
+        );
+      }
+      return;
+    }
+    if (message['method'] == 'item/tool/call') {
+      unawaited(_handleToolCall(message));
+      return;
+    }
+    if (message['method'] == 'turn/completed') {
+      final params = message['params'] as Map?;
+      final turn = params?['turn'] as Map?;
+      final status = turn?['status']?.toString();
+      if (!_completed.isCompleted) {
+        _completed.complete(
+          AgentRunResult(
+            status: status == 'interrupted'
+                ? AgentRunStatus.cancelled
+                : (status == 'completed'
+                      ? AgentRunStatus.completed
+                      : AgentRunStatus.failed),
+            results: List<AgentToolCallResult>.unmodifiable(_toolResults),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleToolCall(Map<String, Object?> message) async {
+    final id = message['id'];
+    final params = message['params'] as Map?;
+    if (id is! int || params == null || _toolHandler == null) return;
+    try {
+      final output = await _toolHandler!(
+        params['tool']?.toString() ?? '',
+        params['arguments'],
+      );
+      _toolResults.add(
+        AgentToolCallResult(
+          toolName: params['tool']?.toString() ?? 'unknown',
+          success: true,
+          output: output,
+        ),
+      );
+      _respond(id, <String, Object?>{
+        'success': true,
+        'contentItems': <Object?>[
+          <String, Object?>{'type': 'inputText', 'text': jsonEncode(output)},
+        ],
+      });
+    } on _CodexFailure catch (error) {
+      _respond(id, <String, Object?>{
+        'success': false,
+        'contentItems': <Object?>[
+          <String, Object?>{
+            'type': 'inputText',
+            'text': jsonEncode(<String, Object?>{'error': error.category}),
+          },
+        ],
+      });
+    } catch (_) {
+      _respond(id, const <String, Object?>{
+        'success': false,
+        'contentItems': <Object?>[],
+      });
+    }
+  }
+
+  Future<Map<String, Object?>> _request(
+    String method,
+    Map<String, Object?> params,
+  ) {
+    final id = ++_nextId;
+    final completer = Completer<Map<String, Object?>>();
+    _requests[id] = completer;
+    _send(<String, Object?>{'method': method, 'id': id, 'params': params});
+    return completer.future.timeout(const Duration(seconds: 15));
+  }
+
+  void _notify(String method, Map<String, Object?> params) =>
+      _send(<String, Object?>{'method': method, 'params': params});
+  void _respond(int id, Map<String, Object?> result) =>
+      _send(<String, Object?>{'id': id, 'result': result});
+  void _send(Map<String, Object?> message) =>
+      _process.stdin.writeln(jsonEncode(message));
+  Future<void> interrupt() async {
+    if (_threadId != null && _turnId != null) {
+      try {
+        await _request('turn/interrupt', <String, Object?>{
+          'threadId': _threadId,
+          'turnId': _turnId,
+        });
+      } catch (_) {}
+    }
+  }
+
+  Future<void> close() async {
+    await interrupt();
+    _process.kill();
+    await _stdout.cancel();
+    await _stderr.cancel();
+  }
+}
+
+class _CodexRunHandle implements AgentRunHandle {
+  _CodexRunHandle(this.runId);
+  @override
+  final String runId;
+  final StreamController<AgentRunEvent> _events =
+      StreamController<AgentRunEvent>.broadcast();
+  final Completer<AgentRunResult> _result = Completer<AgentRunResult>();
+  _CodexAppServer? _server;
+  @override
+  Stream<AgentRunEvent> get events => _events.stream;
+  @override
+  Future<AgentRunResult> get result => _result.future;
+  void attach(_CodexAppServer server) {
+    _server = server;
+    _events.add(const AgentRunEvent('app_server_started'));
+  }
+
+  void complete(AgentRunResult result) {
+    if (!_result.isCompleted) _result.complete(result);
+    _events.add(const AgentRunEvent('completed'));
+    _events.close();
+  }
+
+  void fail(String category) => complete(
+    AgentRunResult(
+      status: AgentRunStatus.failed,
+      results: const <AgentToolCallResult>[],
+      failureCategory: category,
+    ),
+  );
+  @override
+  Future<void> cancel() async {
+    _events.add(const AgentRunEvent('cancelling'));
+    await _server?.interrupt();
+    if (!_result.isCompleted) {
+      _result.complete(
+        const AgentRunResult(
+          status: AgentRunStatus.cancelled,
+          results: <AgentToolCallResult>[],
+        ),
+      );
+    }
+  }
+}
+
+class _CodexFailure implements Exception {
+  const _CodexFailure(this.category);
+  final String category;
+}
+
+/// Registers only the two read-only dynamic tools and routes both through AppCommandBus.
+class CodexAgentCommandBindings {
+  CodexAgentCommandBindings(this._bus, this._history);
+  final AppCommandBus _bus;
+  final GrpcPersistenceRepository _history;
+  void register() {
+    _bus.register<AppCapabilitiesCommand, Map<String, Object?>>(
+      _CapabilitiesHandler(),
+    );
+    _bus.register<GrpcHistorySearchCommand, Map<String, Object?>>(
+      _GrpcHistoryHandler(_history),
+    );
+  }
+
+  AgentToolRegistry registry(String workspaceId) {
+    final registry = AgentToolRegistry();
+    AgentToolDefinition tool(
+      String name,
+      Future<Map<String, Object?>> Function() execute,
+    ) => AgentToolDefinition(
+      name: name,
+      version: '1',
+      description: name,
+      risk: AgentRisk.readOnly,
+      permission: AgentPermissionMode.observe,
+      requiresApproval: false,
+      timeout: const Duration(seconds: 5),
+      cancellable: true,
+      idempotency: AgentIdempotency.idempotent,
+      validator: (input) => input.isEmpty,
+      execute: (_) => execute(),
+      maximumInputBytes: 256,
+      maximumOutputBytes: 4096,
+      allowedInputFields: const <String>{},
+      rejectUnknownFields: true,
+      availability: AgentToolAvailability.available,
+    );
+    registry.register(
+      tool(
+        'app.capabilities',
+        () => _bus.execute<AppCapabilitiesCommand, Map<String, Object?>>(
+          const AppCapabilitiesCommand(),
+          AppCommandContext(
+            operationId: const Uuid().v4(),
+            workspaceId: workspaceId,
+          ),
+        ),
+      ),
+    );
+    registry.register(
+      tool(
+        'grpc.history.search',
+        () => _bus.execute<GrpcHistorySearchCommand, Map<String, Object?>>(
+          const GrpcHistorySearchCommand(),
+          AppCommandContext(
+            operationId: const Uuid().v4(),
+            workspaceId: workspaceId,
+          ),
+        ),
+      ),
+    );
+    return registry;
+  }
+}
+
+class _CapabilitiesHandler
+    implements AppCommandHandler<AppCapabilitiesCommand, Map<String, Object?>> {
+  @override
+  Future<Map<String, Object?>> handle(
+    AppCapabilitiesCommand command,
+    AppCommandContext context,
+  ) async => const <String, Object?>{
+    'toolsAllowed': 2,
+    'tools': <String>['app.capabilities', 'grpc.history.search'],
+    'networkExecution': false,
+    'fileModification': false,
+    'directDatabaseAccess': false,
+  };
+}
+
+class _GrpcHistoryHandler
+    implements
+        AppCommandHandler<GrpcHistorySearchCommand, Map<String, Object?>> {
+  _GrpcHistoryHandler(this._history);
+  final GrpcPersistenceRepository _history;
+  @override
+  Future<Map<String, Object?>> handle(
+    GrpcHistorySearchCommand command,
+    AppCommandContext context,
+  ) async {
+    final entries = await _history.history(context.workspaceId, limit: 10);
+    return <String, Object?>{
+      'totalCount': entries.length,
+      'records': entries
+          .map(
+            (entry) => <String, Object?>{
+              'protocol': 'gRPC',
+              'method': SecretMasker.redactText(
+                '${entry.methodIdentity['service'] ?? ''}/${entry.methodIdentity['method'] ?? ''}',
+              ),
+              'statusCategory': entry.outcome.name,
+              'timestamp': entry.createdAt.toUtc().toIso8601String(),
+            },
+          )
+          .toList(growable: false),
+    };
+  }
+}

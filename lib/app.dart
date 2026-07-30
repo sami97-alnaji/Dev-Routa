@@ -3,6 +3,11 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import 'core/network/dio_request_execution_service.dart';
+import 'core/agent_control/application/agent_orchestrator.dart';
+import 'core/agent_control/application/agent_permission_engine.dart';
+import 'core/agent_control/application/app_command_bus.dart';
+import 'core/agent_control/data/codex_subscription_adapter.dart';
+import 'core/agent_control/domain/agent_models.dart';
 import 'core/security/flutter_secure_storage_service.dart';
 import 'core/storage/database_schema.dart';
 import 'core/storage/local_workspace_repository.dart';
@@ -19,6 +24,8 @@ import 'features/graphql/application/graphql_subscription_service.dart';
 import 'features/realtime/presentation/realtime_session_cubit.dart';
 import 'features/workspace/presentation/app_shell.dart';
 import 'features/workspace/presentation/workspace_cubit.dart';
+import 'features/grpc/data/grpc_persistence_repository.dart';
+import 'features/ai_assistant/application/codex_agents_controller.dart';
 
 class DevRouteApp extends StatelessWidget {
   DevRouteApp({super.key, AppDatabase? database})
@@ -51,6 +58,10 @@ class DevRouteApp extends StatelessWidget {
             path: '/graphql',
             builder: (context, state) => const AppShell(initialSection: 6),
           ),
+          GoRoute(
+            path: '/ai-agents',
+            builder: (context, state) => const AppShell(initialSection: 7),
+          ),
         ],
       );
 
@@ -61,54 +72,71 @@ class DevRouteApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final secureStorage = FlutterSecureStorageService();
     final repository = LocalWorkspaceRepository(_database, secureStorage);
+    final commandBus = AppCommandBus();
+    final bindings = CodexAgentCommandBindings(
+      commandBus,
+      GrpcPersistenceRepository(_database),
+    )..register();
+    final codexController = CodexAgentsController(
+      CodexSubscriptionAdapter(
+        orchestratorForWorkspace: (workspaceId) => AgentOrchestrator(
+          bindings.registry(workspaceId),
+          AgentPermissionEngine(),
+          InMemoryAgentAuditSink(),
+        ),
+      ),
+    );
     return RepositoryProvider<LocalWorkspaceRepository>(
       create: (_) => repository,
-      child: MultiBlocProvider(
-        providers: [
-          BlocProvider(
-            create: (_) => RequestWorkflowCubit(
-              DioRequestExecutionService(secureStorage: secureStorage),
-              repository,
-            )..restoreDrafts(),
-          ),
-          BlocProvider(create: (_) => WorkspaceCubit(repository)..load()),
-          BlocProvider(
-            create: (_) => RealtimeSessionCubit(
-              RealtimeTransport(),
-              RealtimeRepository(_database),
-              secureStorage: secureStorage,
+      child: RepositoryProvider<CodexAgentsService>.value(
+        value: CodexAgentsService(codexController),
+        child: MultiBlocProvider(
+          providers: [
+            BlocProvider(
+              create: (_) => RequestWorkflowCubit(
+                DioRequestExecutionService(secureStorage: secureStorage),
+                repository,
+              )..restoreDrafts(),
             ),
-          ),
-        ],
-        child: RepositoryProvider<GraphqlRepository>(
-          create: (_) =>
-              GraphqlRepository(_database, secureStorage: secureStorage),
-          child: RepositoryProvider<GraphqlExecutionService>(
-            create: (context) => GraphqlExecutionService(
-              GraphqlHttpService(secureStorage: secureStorage),
-              context.read<GraphqlRepository>(),
-              resolver: GraphqlRequestResolver(
-                context.read<GraphqlRepository>(),
+            BlocProvider(create: (_) => WorkspaceCubit(repository)..load()),
+            BlocProvider(
+              create: (_) => RealtimeSessionCubit(
+                RealtimeTransport(),
+                RealtimeRepository(_database),
                 secureStorage: secureStorage,
               ),
             ),
-            child: RepositoryProvider<GraphqlIntrospectionService>(
-              create: (_) => GraphqlIntrospectionService(
+          ],
+          child: RepositoryProvider<GraphqlRepository>(
+            create: (_) =>
+                GraphqlRepository(_database, secureStorage: secureStorage),
+            child: RepositoryProvider<GraphqlExecutionService>(
+              create: (context) => GraphqlExecutionService(
                 GraphqlHttpService(secureStorage: secureStorage),
-              ),
-              child: RepositoryProvider<GraphqlSubscriptionService>(
-                create: (context) => GraphqlSubscriptionService(
-                  resolver: GraphqlRequestResolver(
-                    context.read<GraphqlRepository>(),
-                    secureStorage: secureStorage,
-                  ),
+                context.read<GraphqlRepository>(),
+                resolver: GraphqlRequestResolver(
+                  context.read<GraphqlRepository>(),
+                  secureStorage: secureStorage,
                 ),
-                child: MaterialApp.router(
-                  title: 'DevRoute AI Studio',
-                  theme: AppTheme.light,
-                  darkTheme: AppTheme.dark,
-                  themeMode: ThemeMode.dark,
-                  routerConfig: _router,
+              ),
+              child: RepositoryProvider<GraphqlIntrospectionService>(
+                create: (_) => GraphqlIntrospectionService(
+                  GraphqlHttpService(secureStorage: secureStorage),
+                ),
+                child: RepositoryProvider<GraphqlSubscriptionService>(
+                  create: (context) => GraphqlSubscriptionService(
+                    resolver: GraphqlRequestResolver(
+                      context.read<GraphqlRepository>(),
+                      secureStorage: secureStorage,
+                    ),
+                  ),
+                  child: MaterialApp.router(
+                    title: 'DevRoute AI Studio',
+                    theme: AppTheme.light,
+                    darkTheme: AppTheme.dark,
+                    themeMode: ThemeMode.dark,
+                    routerConfig: _router,
+                  ),
                 ),
               ),
             ),

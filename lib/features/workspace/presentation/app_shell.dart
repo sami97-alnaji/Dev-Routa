@@ -130,45 +130,56 @@ class _AppShellState extends State<AppShell> {
     final expandedRail = width >= 1180;
     final requestState = context.watch<RequestWorkflowCubit>().state;
     final graphqlDirty = _graphqlWorkflow?.state.hasAnyDirty ?? false;
-    return PopScope(
-      canPop: _allowExit || (!requestState.hasAnyDirty && !graphqlDirty),
-      onPopInvokedWithResult: (didPop, _) async {
-        if (!didPop && (requestState.hasAnyDirty || graphqlDirty)) {
-          await _guardExit(
-            restDirty: requestState.hasAnyDirty,
-            graphqlDirty: graphqlDirty,
-          );
-        }
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyK, control: true):
+            _openCommandPalette,
+        const SingleActivator(LogicalKeyboardKey.keyN, control: true):
+            _newRequest,
       },
-      child: Scaffold(
-        appBar: !rail
-            ? AppBar(
-                title: Text(_shellDestinations[_selected].label),
-                actions: [
-                  IconButton(
-                    tooltip: 'New request',
-                    onPressed: _newRequest,
-                    icon: const Icon(Icons.add_rounded),
-                  ),
-                  const SizedBox(width: 4),
-                ],
-              )
-            : null,
-        body: rail
-            ? Row(
-                children: [
-                  _NavigationSidebar(
-                    expanded: expandedRail,
-                    selected: _selected,
-                    onSelect: _select,
-                    onNewRequest: _newRequest,
-                  ),
-                  const VerticalDivider(width: 1),
-                  Expanded(child: _mainContent(rail: true)),
-                ],
-              )
-            : _mainContent(rail: false),
-        bottomNavigationBar: !rail ? _compactNavigation() : null,
+      child: Focus(
+        autofocus: true,
+        child: PopScope(
+          canPop: _allowExit || (!requestState.hasAnyDirty && !graphqlDirty),
+          onPopInvokedWithResult: (didPop, _) async {
+            if (!didPop && (requestState.hasAnyDirty || graphqlDirty)) {
+              await _guardExit(
+                restDirty: requestState.hasAnyDirty,
+                graphqlDirty: graphqlDirty,
+              );
+            }
+          },
+          child: Scaffold(
+            appBar: !rail
+                ? AppBar(
+                    title: Text(_shellDestinations[_selected].label),
+                    actions: [
+                      IconButton(
+                        tooltip: 'New request',
+                        onPressed: _newRequest,
+                        icon: const Icon(Icons.add_rounded),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                  )
+                : null,
+            body: rail
+                ? Row(
+                    children: [
+                      _NavigationSidebar(
+                        expanded: expandedRail,
+                        selected: _selected,
+                        onSelect: _select,
+                        onNewRequest: _newRequest,
+                      ),
+                      const VerticalDivider(width: 1),
+                      Expanded(child: _mainContent(rail: true)),
+                    ],
+                  )
+                : _mainContent(rail: false),
+            bottomNavigationBar: !rail ? _compactNavigation() : null,
+          ),
+        ),
       ),
     );
   }
@@ -195,6 +206,7 @@ class _AppShellState extends State<AppShell> {
           _WorkspaceToolbar(
             destination: _shellDestinations[_selected],
             onNewRequest: _newRequest,
+            onCommandPalette: _openCommandPalette,
           ),
         Expanded(
           child: SafeArea(
@@ -203,6 +215,49 @@ class _AppShellState extends State<AppShell> {
           ),
         ),
       ],
+    );
+  }
+
+  Future<void> _openCommandPalette() async {
+    final commands = <(String, IconData, VoidCallback)>[
+      ('New REST request', Icons.add_rounded, _newRequest),
+      for (var i = 0; i < _shellDestinations.length; i++)
+        (
+          'Open ${_shellDestinations[i].label}',
+          _shellDestinations[i].icon,
+          () => _select(i),
+        ),
+    ];
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560, maxHeight: 520),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.all(10),
+            children: [
+              const ListTile(
+                leading: Icon(Icons.search_rounded),
+                title: Text('Command Palette'),
+                subtitle: Text(
+                  'Move through DevRoute without leaving your flow.',
+                ),
+              ),
+              const Divider(),
+              for (final command in commands)
+                ListTile(
+                  leading: Icon(command.$2),
+                  title: Text(command.$1),
+                  onTap: () {
+                    Navigator.pop(dialogContext);
+                    command.$3();
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -2801,10 +2856,12 @@ class _WorkspaceToolbar extends StatelessWidget {
   const _WorkspaceToolbar({
     required this.destination,
     required this.onNewRequest,
+    required this.onCommandPalette,
   });
 
   final _ShellDestination destination;
   final VoidCallback onNewRequest;
+  final VoidCallback onCommandPalette;
 
   @override
   Widget build(BuildContext context) {
@@ -2842,6 +2899,34 @@ class _WorkspaceToolbar extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+          Tooltip(
+            message: 'Command palette (Ctrl+K)',
+            child: OutlinedButton.icon(
+              onPressed: onCommandPalette,
+              icon: const Icon(Icons.search_rounded),
+              label: const Text('Search'),
+            ),
+          ),
+          const SizedBox(width: 10),
+          PopupMenuButton<ThemeMode>(
+            tooltip: 'Appearance',
+            icon: const Icon(Icons.brightness_6_outlined),
+            onSelected: (mode) => DevRouteAppearance.mode.value = mode,
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: ThemeMode.system,
+                child: Text('System appearance'),
+              ),
+              PopupMenuItem(
+                value: ThemeMode.light,
+                child: Text('Light appearance'),
+              ),
+              PopupMenuItem(
+                value: ThemeMode.dark,
+                child: Text('Dark appearance'),
+              ),
+            ],
           ),
           Tooltip(
             message: 'New request',

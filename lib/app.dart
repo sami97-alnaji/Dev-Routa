@@ -103,12 +103,16 @@ class DevRouteApp extends StatelessWidget {
                     secureStorage: secureStorage,
                   ),
                 ),
-                child: MaterialApp.router(
-                  title: 'DevRoute AI Studio',
-                  theme: AppTheme.light,
-                  darkTheme: AppTheme.dark,
-                  themeMode: ThemeMode.dark,
-                  routerConfig: _router,
+                child: ValueListenableBuilder<ThemeMode>(
+                  valueListenable: DevRouteAppearance.mode,
+                  builder: (context, themeMode, _) => MaterialApp.router(
+                    title: 'DevRoute AI Studio',
+                    debugShowCheckedModeBanner: false,
+                    theme: AppTheme.light,
+                    darkTheme: AppTheme.dark,
+                    themeMode: themeMode,
+                    routerConfig: _router,
+                  ),
                 ),
               ),
             ),

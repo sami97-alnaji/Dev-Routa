@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
 
+/// Shared appearance preference. Kept presentation-only so every platform can
+/// follow the system or let the developer choose a focused workspace mode.
+abstract final class DevRouteAppearance {
+  static final mode = ValueNotifier<ThemeMode>(ThemeMode.system);
+}
+
 abstract final class AppTheme {
   /// The DevRoute palette keeps the workspace visually quiet so live traffic,
   /// errors, and the primary action are immediately recognisable.
-  static const accent = Color(0xFF7AA7FF);
+  static const accent = Color(0xFF6F7BF7);
+  static const routeGlow = Color(0xFFFF7A59);
   static const live = Color(0xFF45D6A0);
   static const danger = Color(0xFFFF8B8B);
   static const _night = Color(0xFF0B0D12);

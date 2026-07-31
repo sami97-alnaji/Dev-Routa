@@ -13,6 +13,7 @@ import '../../../core/rest/token_candidate_service.dart';
 import '../../../core/rest/variable_resolution_service.dart';
 import '../../../core/security/secret_masker.dart';
 import '../../../core/storage/local_workspace_repository.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../features/realtime/presentation/realtime_screen.dart';
 import '../../../features/graphql/presentation/graphql_screen.dart';
 import '../../../features/graphql/data/graphql_repository.dart';
@@ -24,6 +25,74 @@ import '../../../features/graphql/application/graphql_subscription_service.dart'
 import '../../../shared/models/api_models.dart';
 import '../../requests/presentation/request_workflow_cubit.dart';
 import 'workspace_cubit.dart';
+
+class _ShellDestination {
+  const _ShellDestination({
+    required this.label,
+    required this.compactLabel,
+    required this.description,
+    required this.icon,
+    required this.selectedIcon,
+  });
+
+  final String label;
+  final String compactLabel;
+  final String description;
+  final IconData icon;
+  final IconData selectedIcon;
+}
+
+const _shellDestinations = <_ShellDestination>[
+  _ShellDestination(
+    label: 'Workspace',
+    compactLabel: 'Workspace',
+    description: 'Organise collections, requests, and environments.',
+    icon: Icons.grid_view_outlined,
+    selectedIcon: Icons.grid_view_rounded,
+  ),
+  _ShellDestination(
+    label: 'Requests',
+    compactLabel: 'Request',
+    description: 'Compose, send, and inspect HTTP requests.',
+    icon: Icons.send_outlined,
+    selectedIcon: Icons.send_rounded,
+  ),
+  _ShellDestination(
+    label: 'History',
+    compactLabel: 'History',
+    description: 'Review previous requests and compare outcomes.',
+    icon: Icons.history_outlined,
+    selectedIcon: Icons.history_rounded,
+  ),
+  _ShellDestination(
+    label: 'Environments',
+    compactLabel: 'Environment',
+    description: 'Keep variables and secure references in one place.',
+    icon: Icons.tune_outlined,
+    selectedIcon: Icons.tune_rounded,
+  ),
+  _ShellDestination(
+    label: 'Settings',
+    compactLabel: 'Settings',
+    description: 'Control retention, privacy, and workspace behaviour.',
+    icon: Icons.settings_outlined,
+    selectedIcon: Icons.settings_rounded,
+  ),
+  _ShellDestination(
+    label: 'Realtime',
+    compactLabel: 'Live',
+    description: 'Observe WebSocket, SSE, and streaming connections.',
+    icon: Icons.sensors_outlined,
+    selectedIcon: Icons.sensors_rounded,
+  ),
+  _ShellDestination(
+    label: 'GraphQL',
+    compactLabel: 'GraphQL',
+    description: 'Explore schemas and operate GraphQL services.',
+    icon: Icons.account_tree_outlined,
+    selectedIcon: Icons.account_tree_rounded,
+  ),
+];
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key, this.initialSection = 0});
@@ -56,9 +125,10 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final compact = MediaQuery.sizeOf(context).width < 900;
+    final width = MediaQuery.sizeOf(context).width;
+    final rail = width >= 840;
+    final expandedRail = width >= 1180;
     final requestState = context.watch<RequestWorkflowCubit>().state;
-    final body = Padding(padding: const EdgeInsets.all(16), child: _content());
     final graphqlDirty = _graphqlWorkflow?.state.hasAnyDirty ?? false;
     return PopScope(
       canPop: _allowExit || (!requestState.hasAnyDirty && !graphqlDirty),
@@ -71,100 +141,152 @@ class _AppShellState extends State<AppShell> {
         }
       },
       child: Scaffold(
-        appBar: compact
-            ? AppBar(title: const Text('DevRoute AI Studio'))
-            : null,
-        body: compact
-            ? body
-            : Row(
-                children: [
-                  NavigationRail(
-                    extended: true,
-                    selectedIndex: _selected,
-                    onDestinationSelected: _select,
-                    leading: const Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Text(
-                        'DevRoute',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-                    ),
-                    destinations: const [
-                      NavigationRailDestination(
-                        icon: Icon(Icons.folder_outlined),
-                        label: Text('Workspace'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.send_outlined),
-                        label: Text('Requests'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.history),
-                        label: Text('History'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.tune),
-                        label: Text('Environments'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.settings_outlined),
-                        label: Text('Settings'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.hub_outlined),
-                        label: Text('Realtime'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.account_tree_outlined),
-                        label: Text('GraphQL'),
-                      ),
-                    ],
+        appBar: !rail
+            ? AppBar(
+                title: Text(_shellDestinations[_selected].label),
+                actions: [
+                  IconButton(
+                    tooltip: 'New request',
+                    onPressed: _newRequest,
+                    icon: const Icon(Icons.add_rounded),
                   ),
-                  const VerticalDivider(width: 1),
-                  Expanded(child: body),
-                ],
-              ),
-        bottomNavigationBar: compact
-            ? NavigationBar(
-                selectedIndex: _selected,
-                onDestinationSelected: _select,
-                destinations: const [
-                  NavigationDestination(
-                    icon: Icon(Icons.folder_outlined),
-                    label: 'Home',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.send_outlined),
-                    label: 'Request',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.history),
-                    label: 'History',
-                  ),
-                  NavigationDestination(icon: Icon(Icons.tune), label: 'Env'),
-                  NavigationDestination(
-                    icon: Icon(Icons.settings_outlined),
-                    label: 'Settings',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.hub_outlined),
-                    label: 'Realtime',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.account_tree_outlined),
-                    label: 'GraphQL',
-                  ),
+                  const SizedBox(width: 4),
                 ],
               )
             : null,
+        body: rail
+            ? Row(
+                children: [
+                  _NavigationSidebar(
+                    expanded: expandedRail,
+                    selected: _selected,
+                    onSelect: _select,
+                    onNewRequest: _newRequest,
+                  ),
+                  const VerticalDivider(width: 1),
+                  Expanded(child: _mainContent(rail: true)),
+                ],
+              )
+            : _mainContent(rail: false),
+        bottomNavigationBar: !rail ? _compactNavigation() : null,
       ),
     );
   }
 
   void _select(int value) => setState(() => _selected = value);
+
+  void _newRequest() {
+    context.read<RequestWorkflowCubit>().newRequest(
+      collectionId: context.read<WorkspaceCubit>().state.selectedCollectionId,
+    );
+    _select(1);
+  }
+
+  Widget _mainContent({required bool rail}) {
+    final width = MediaQuery.sizeOf(context).width;
+    final padding = width >= 1180
+        ? const EdgeInsets.fromLTRB(32, 22, 32, 28)
+        : width >= 600
+        ? const EdgeInsets.fromLTRB(24, 20, 24, 24)
+        : const EdgeInsets.fromLTRB(16, 10, 16, 16);
+    return Column(
+      children: [
+        if (rail)
+          _WorkspaceToolbar(
+            destination: _shellDestinations[_selected],
+            onNewRequest: _newRequest,
+          ),
+        Expanded(
+          child: SafeArea(
+            top: !rail,
+            child: Padding(padding: padding, child: _content()),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _compactNavigation() => NavigationBar(
+    selectedIndex: switch (_selected) {
+      0 => 0,
+      1 => 1,
+      5 => 2,
+      6 => 3,
+      _ => 4,
+    },
+    onDestinationSelected: (index) {
+      switch (index) {
+        case 0:
+          _select(0);
+        case 1:
+          _select(1);
+        case 2:
+          _select(5);
+        case 3:
+          _select(6);
+        case 4:
+          _openMoreNavigation();
+      }
+    },
+    destinations: const [
+      NavigationDestination(
+        icon: Icon(Icons.grid_view_outlined),
+        selectedIcon: Icon(Icons.grid_view_rounded),
+        label: 'Workspace',
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.send_outlined),
+        selectedIcon: Icon(Icons.send_rounded),
+        label: 'Request',
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.sensors_outlined),
+        selectedIcon: Icon(Icons.sensors_rounded),
+        label: 'Realtime',
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.account_tree_outlined),
+        selectedIcon: Icon(Icons.account_tree_rounded),
+        label: 'GraphQL',
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.more_horiz_rounded),
+        selectedIcon: Icon(Icons.more_horiz_rounded),
+        label: 'More',
+      ),
+    ],
+  );
+
+  Future<void> _openMoreNavigation() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final index in const [2, 3, 4])
+                ListTile(
+                  leading: Icon(_shellDestinations[index].icon),
+                  title: Text(_shellDestinations[index].label),
+                  subtitle: Text(_shellDestinations[index].description),
+                  trailing: _selected == index
+                      ? const Icon(Icons.check_rounded)
+                      : null,
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _select(index);
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _content() => switch (_selected) {
     0 => _workspace(),
     1 => _request(),
@@ -642,9 +764,10 @@ class _AppShellState extends State<AppShell> {
             ],
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              DropdownButton<HttpMethod>(
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 620;
+              final method = DropdownButton<HttpMethod>(
                 value: state.request.method,
                 items: HttpMethod.values
                     .map(
@@ -657,32 +780,53 @@ class _AppShellState extends State<AppShell> {
                 onChanged: sendingActiveRequest
                     ? null
                     : (value) => cubit.updateMethod(value!),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _urlController,
-                  enabled: !sendingActiveRequest,
-                  onChanged: cubit.updateUrl,
-                  decoration: const InputDecoration(
-                    border: OutlineInputBorder(),
-                    hintText: 'https://api.example.com/resource',
-                  ),
+              );
+              final url = TextField(
+                controller: _urlController,
+                enabled: !sendingActiveRequest,
+                onChanged: cubit.updateUrl,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  hintText: 'https://api.example.com/resource',
                 ),
-              ),
-              const SizedBox(width: 10),
-              FilledButton.icon(
+              );
+              final send = FilledButton.icon(
                 onPressed: sendingActiveRequest
                     ? cubit.cancel
                     : () => _sendWithSafety(cubit, state, workspace),
                 icon: Icon(
                   sendingActiveRequest
                       ? Icons.stop_circle_outlined
-                      : Icons.send,
+                      : Icons.send_rounded,
                 ),
                 label: Text(sendingActiveRequest ? 'Cancel' : 'Send'),
-              ),
-            ],
+              );
+              if (compact) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: method),
+                        const SizedBox(width: 10),
+                        send,
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    url,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  method,
+                  const SizedBox(width: 10),
+                  Expanded(child: url),
+                  const SizedBox(width: 10),
+                  send,
+                ],
+              );
+            },
           ),
           const SizedBox(height: 8),
           _requestEditor(state, cubit, workspace),
@@ -1409,159 +1553,176 @@ class _AppShellState extends State<AppShell> {
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  width: MediaQuery.sizeOf(context).width < 700 ? 180 : 300,
-                  child: ListView(
-                    children: [
-                      for (final item in state.environments)
-                        Card(
-                          child: ListTile(
-                            selected: item.id == state.selectedEnvironmentId,
-                            leading: Icon(
-                              item.isActive
-                                  ? Icons.radio_button_checked
-                                  : Icons.radio_button_unchecked,
-                            ),
-                            title: Text(item.name),
-                            subtitle: Text(item.kind.name),
-                            onTap: () => cubit.selectEnvironment(item.id),
-                            trailing: PopupMenuButton<String>(
-                              onSelected: (action) =>
-                                  _environmentAction(action, item),
-                              itemBuilder: (_) => const [
-                                PopupMenuItem(
-                                  value: 'activate',
-                                  child: Text('Activate'),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 720;
+                return Flex(
+                  direction: compact ? Axis.vertical : Axis.horizontal,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      width: compact ? null : 300,
+                      height: compact ? 210 : null,
+                      child: ListView(
+                        children: [
+                          for (final item in state.environments)
+                            Card(
+                              child: ListTile(
+                                selected:
+                                    item.id == state.selectedEnvironmentId,
+                                leading: Icon(
+                                  item.isActive
+                                      ? Icons.radio_button_checked
+                                      : Icons.radio_button_unchecked,
                                 ),
-                                PopupMenuItem(
-                                  value: 'rename',
-                                  child: Text('Rename'),
-                                ),
-                                PopupMenuItem(
-                                  value: 'duplicate',
-                                  child: Text('Duplicate'),
-                                ),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: Text('Delete'),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                const VerticalDivider(),
-                Expanded(
-                  child: state.selectedEnvironmentId == null
-                      ? const Center(child: Text('Select an environment.'))
-                      : Column(
-                          children: [
-                            Row(
-                              children: [
-                                Text(
-                                  'Variables',
-                                  style: Theme.of(context).textTheme.titleLarge,
-                                ),
-                                const Spacer(),
-                                FilledButton.icon(
-                                  onPressed: () => _editVariable(),
-                                  icon: const Icon(Icons.add),
-                                  label: const Text('Add'),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Expanded(
-                              child: ListView(
-                                children: [
-                                  for (final variable
-                                      in state.environmentVariables)
-                                    Card(
-                                      child: ListTile(
-                                        leading: Checkbox(
-                                          value: variable.enabled,
-                                          onChanged: (value) =>
-                                              cubit.saveVariable(
-                                                id: variable.id,
-                                                key: variable.key,
-                                                value: variable.value,
-                                                secret: variable.isSecret,
-                                                enabled: value ?? true,
-                                              ),
-                                        ),
-                                        title: Text(variable.key),
-                                        subtitle: Text(
-                                          variable.isSecret
-                                              ? '[SECURE STORAGE REFERENCE]'
-                                              : variable.value,
-                                        ),
-                                        onTap: () => _editVariable(variable),
-                                        trailing: Wrap(
-                                          children: [
-                                            IconButton(
-                                              tooltip: 'Move up',
-                                              onPressed:
-                                                  state.environmentVariables
-                                                          .indexOf(variable) ==
-                                                      0
-                                                  ? null
-                                                  : () => cubit.reorderVariable(
-                                                      variable.id,
-                                                      state.environmentVariables
-                                                              .indexOf(
-                                                                variable,
-                                                              ) -
-                                                          1,
-                                                    ),
-                                              icon: const Icon(
-                                                Icons.arrow_upward,
-                                              ),
-                                            ),
-                                            IconButton(
-                                              tooltip: 'Move down',
-                                              onPressed:
-                                                  state.environmentVariables
-                                                          .indexOf(variable) ==
-                                                      state
-                                                              .environmentVariables
-                                                              .length -
-                                                          1
-                                                  ? null
-                                                  : () => cubit.reorderVariable(
-                                                      variable.id,
-                                                      state.environmentVariables
-                                                              .indexOf(
-                                                                variable,
-                                                              ) +
-                                                          1,
-                                                    ),
-                                              icon: const Icon(
-                                                Icons.arrow_downward,
-                                              ),
-                                            ),
-                                            IconButton(
-                                              onPressed: () => cubit
-                                                  .removeVariable(variable.id),
-                                              icon: const Icon(
-                                                Icons.delete_outline,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                title: Text(item.name),
+                                subtitle: Text(item.kind.name),
+                                onTap: () => cubit.selectEnvironment(item.id),
+                                trailing: PopupMenuButton<String>(
+                                  onSelected: (action) =>
+                                      _environmentAction(action, item),
+                                  itemBuilder: (_) => const [
+                                    PopupMenuItem(
+                                      value: 'activate',
+                                      child: Text('Activate'),
                                     ),
-                                ],
+                                    PopupMenuItem(
+                                      value: 'rename',
+                                      child: Text('Rename'),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'duplicate',
+                                      child: Text('Duplicate'),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'delete',
+                                      child: Text('Delete'),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                          ],
-                        ),
-                ),
-              ],
+                        ],
+                      ),
+                    ),
+                    if (compact) const Divider() else const VerticalDivider(),
+                    Expanded(
+                      child: state.selectedEnvironmentId == null
+                          ? const Center(child: Text('Select an environment.'))
+                          : Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      'Variables',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleLarge,
+                                    ),
+                                    const Spacer(),
+                                    FilledButton.icon(
+                                      onPressed: () => _editVariable(),
+                                      icon: const Icon(Icons.add),
+                                      label: const Text('Add'),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Expanded(
+                                  child: ListView(
+                                    children: [
+                                      for (final variable
+                                          in state.environmentVariables)
+                                        Card(
+                                          child: ListTile(
+                                            leading: Checkbox(
+                                              value: variable.enabled,
+                                              onChanged: (value) =>
+                                                  cubit.saveVariable(
+                                                    id: variable.id,
+                                                    key: variable.key,
+                                                    value: variable.value,
+                                                    secret: variable.isSecret,
+                                                    enabled: value ?? true,
+                                                  ),
+                                            ),
+                                            title: Text(variable.key),
+                                            subtitle: Text(
+                                              variable.isSecret
+                                                  ? '[SECURE STORAGE REFERENCE]'
+                                                  : variable.value,
+                                            ),
+                                            onTap: () =>
+                                                _editVariable(variable),
+                                            trailing: Wrap(
+                                              children: [
+                                                IconButton(
+                                                  tooltip: 'Move up',
+                                                  onPressed:
+                                                      state.environmentVariables
+                                                              .indexOf(
+                                                                variable,
+                                                              ) ==
+                                                          0
+                                                      ? null
+                                                      : () => cubit.reorderVariable(
+                                                          variable.id,
+                                                          state.environmentVariables
+                                                                  .indexOf(
+                                                                    variable,
+                                                                  ) -
+                                                              1,
+                                                        ),
+                                                  icon: const Icon(
+                                                    Icons.arrow_upward,
+                                                  ),
+                                                ),
+                                                IconButton(
+                                                  tooltip: 'Move down',
+                                                  onPressed:
+                                                      state.environmentVariables
+                                                              .indexOf(
+                                                                variable,
+                                                              ) ==
+                                                          state
+                                                                  .environmentVariables
+                                                                  .length -
+                                                              1
+                                                      ? null
+                                                      : () => cubit.reorderVariable(
+                                                          variable.id,
+                                                          state.environmentVariables
+                                                                  .indexOf(
+                                                                    variable,
+                                                                  ) +
+                                                              1,
+                                                        ),
+                                                  icon: const Icon(
+                                                    Icons.arrow_downward,
+                                                  ),
+                                                ),
+                                                IconButton(
+                                                  onPressed: () =>
+                                                      cubit.removeVariable(
+                                                        variable.id,
+                                                      ),
+                                                  icon: const Icon(
+                                                    Icons.delete_outline,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -2410,6 +2571,288 @@ class _AppShellState extends State<AppShell> {
           controller.dispose();
         }
       }),
+    );
+  }
+}
+
+class _NavigationSidebar extends StatelessWidget {
+  const _NavigationSidebar({
+    required this.expanded,
+    required this.selected,
+    required this.onSelect,
+    required this.onNewRequest,
+  });
+
+  final bool expanded;
+  final int selected;
+  final ValueChanged<int> onSelect;
+  final VoidCallback onNewRequest;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      width: expanded ? 264 : 76,
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: Column(
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(expanded ? 18 : 14, 20, 14, 16),
+            child: expanded
+                ? const _BrandLockup()
+                : const _BrandMark(compact: true),
+          ),
+          if (expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: FilledButton.icon(
+                onPressed: onNewRequest,
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('New request'),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: IconButton.filled(
+                tooltip: 'New request',
+                onPressed: onNewRequest,
+                icon: const Icon(Icons.add_rounded),
+              ),
+            ),
+          const Divider(indent: 14, endIndent: 14),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(8, 12, 8, 12),
+              children: [
+                for (var index = 0; index < _shellDestinations.length; index++)
+                  _SidebarItem(
+                    destination: _shellDestinations[index],
+                    selected: selected == index,
+                    expanded: expanded,
+                    onTap: () => onSelect(index),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(expanded ? 18 : 14, 12, 14, 20),
+            child: expanded
+                ? Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: AppTheme.live,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          'Local workspace ready',
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(color: colors.onSurfaceVariant),
+                        ),
+                      ),
+                    ],
+                  )
+                : Tooltip(
+                    message: 'Local workspace ready',
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: const BoxDecoration(
+                        color: AppTheme.live,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BrandLockup extends StatelessWidget {
+  const _BrandLockup();
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      const _BrandMark(),
+      const SizedBox(width: 10),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('DevRoute', style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            'API STUDIO',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.25,
+            ),
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+class _BrandMark extends StatelessWidget {
+  const _BrandMark({this.compact = false});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = compact ? 42.0 : 38.0;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(compact ? 14 : 13),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF9BBCFF), Color(0xFF4E72F2)],
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x5C4E72F2),
+            blurRadius: 18,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: const Icon(Icons.route_rounded, color: Color(0xFFF8FAFF)),
+    );
+  }
+}
+
+class _SidebarItem extends StatelessWidget {
+  const _SidebarItem({
+    required this.destination,
+    required this.selected,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  final _ShellDestination destination;
+  final bool selected;
+  final bool expanded;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final icon = selected ? destination.selectedIcon : destination.icon;
+    final content = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          height: 48,
+          padding: EdgeInsets.symmetric(horizontal: expanded ? 12 : 0),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            color: selected
+                ? colors.primary.withValues(alpha: 0.16)
+                : Colors.transparent,
+          ),
+          child: expanded
+              ? Row(
+                  children: [
+                    Icon(icon, color: selected ? colors.primary : null),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        destination.label,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: selected ? colors.onSurface : null,
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : Center(
+                  child: Icon(icon, color: selected ? colors.primary : null),
+                ),
+        ),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: expanded
+          ? content
+          : Tooltip(message: destination.label, child: content),
+    );
+  }
+}
+
+class _WorkspaceToolbar extends StatelessWidget {
+  const _WorkspaceToolbar({
+    required this.destination,
+    required this.onNewRequest,
+  });
+
+  final _ShellDestination destination;
+  final VoidCallback onNewRequest;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      height: 76,
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        border: Border(
+          bottom: BorderSide(
+            color: colors.outlineVariant.withValues(alpha: 0.55),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(destination.selectedIcon, color: colors.primary),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  destination.label,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  destination.description,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Tooltip(
+            message: 'New request',
+            child: FilledButton.icon(
+              onPressed: onNewRequest,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('New request'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

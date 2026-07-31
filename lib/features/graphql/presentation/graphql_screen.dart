@@ -193,6 +193,9 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
         builder: (dialogContext) => AlertDialog(
           title: const Text('Unsaved GraphQL changes'),
           content: Text('Save changes to "${tab.title}" before closing?'),
+          actionsOverflowDirection: VerticalDirection.down,
+          actionsOverflowAlignment: OverflowBarAlignment.end,
+          actionsOverflowButtonSpacing: 8,
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, 'cancel'),
@@ -708,7 +711,10 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
                 const Divider(),
                 SizedBox(height: 260, child: saved),
                 const Divider(),
-                SizedBox(height: 262, child: history),
+                SizedBox(
+                  height: MediaQuery.sizeOf(context).width < 500 ? 420 : 312,
+                  child: history,
+                ),
               ],
             )
           : Row(
@@ -717,9 +723,9 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
                   width: 280,
                   child: Column(
                     children: [
-                      Expanded(child: saved),
+                      Expanded(flex: 2, child: saved),
                       const Divider(),
-                      Expanded(child: history),
+                      Expanded(flex: 3, child: history),
                     ],
                   ),
                 ),
@@ -1026,55 +1032,67 @@ class _HistoryPanelState extends State<_HistoryPanel> {
       LayoutBuilder(
         builder: (context, constraints) {
           final filters = <Widget>[
-            DropdownButton<GraphqlHistoryOutcomeFilter>(
-              key: const Key('graphql-history-outcome-filter'),
-              value: widget.outcome,
-              onChanged: (value) {
-                if (value != null) widget.onOutcome(value);
-              },
-              items: GraphqlHistoryOutcomeFilter.values
-                  .map(
+            SizedBox(
+              width: constraints.maxWidth < 320 ? constraints.maxWidth : null,
+              child: DropdownButton<GraphqlHistoryOutcomeFilter>(
+                key: const Key('graphql-history-outcome-filter'),
+                isExpanded: constraints.maxWidth < 320,
+                value: widget.outcome,
+                onChanged: (value) {
+                  if (value != null) widget.onOutcome(value);
+                },
+                items: GraphqlHistoryOutcomeFilter.values
+                    .map(
+                      (value) => DropdownMenuItem(
+                        value: value,
+                        child: Text(_outcomeLabel(value)),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+            SizedBox(
+              width: constraints.maxWidth < 320 ? constraints.maxWidth : null,
+              child: DropdownButton<GraphqlOperationType?>(
+                key: const Key('graphql-history-operation-filter'),
+                isExpanded: constraints.maxWidth < 320,
+                value: widget.operationType,
+                onChanged: widget.onOperationType,
+                items: <DropdownMenuItem<GraphqlOperationType?>>[
+                  const DropdownMenuItem(
+                    value: null,
+                    child: Text('All operations'),
+                  ),
+                  ...GraphqlOperationType.values.map(
+                    (value) =>
+                        DropdownMenuItem(value: value, child: Text(value.name)),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              width: constraints.maxWidth < 500 ? constraints.maxWidth : null,
+              child: DropdownButton<String?>(
+                key: const Key('graphql-history-endpoint-filter'),
+                isExpanded: constraints.maxWidth < 500,
+                value: widget.endpoint,
+                onChanged: widget.onEndpoint,
+                items: <DropdownMenuItem<String?>>[
+                  const DropdownMenuItem(
+                    value: null,
+                    child: Text('All endpoints'),
+                  ),
+                  ...widget.endpoints.map(
                     (value) => DropdownMenuItem(
                       value: value,
-                      child: Text(_outcomeLabel(value)),
-                    ),
-                  )
-                  .toList(),
-            ),
-            DropdownButton<GraphqlOperationType?>(
-              key: const Key('graphql-history-operation-filter'),
-              value: widget.operationType,
-              onChanged: widget.onOperationType,
-              items: <DropdownMenuItem<GraphqlOperationType?>>[
-                const DropdownMenuItem(
-                  value: null,
-                  child: Text('All operations'),
-                ),
-                ...GraphqlOperationType.values.map(
-                  (value) =>
-                      DropdownMenuItem(value: value, child: Text(value.name)),
-                ),
-              ],
-            ),
-            DropdownButton<String?>(
-              key: const Key('graphql-history-endpoint-filter'),
-              value: widget.endpoint,
-              onChanged: widget.onEndpoint,
-              items: <DropdownMenuItem<String?>>[
-                const DropdownMenuItem(
-                  value: null,
-                  child: Text('All endpoints'),
-                ),
-                ...widget.endpoints.map(
-                  (value) => DropdownMenuItem(
-                    value: value,
-                    child: Text(
-                      _safeEndpointLabel(value),
-                      overflow: TextOverflow.ellipsis,
+                      child: Text(
+                        _safeEndpointLabel(value),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             if (widget.hasActiveFilters)
               TextButton(
@@ -1087,24 +1105,12 @@ class _HistoryPanelState extends State<_HistoryPanel> {
               key: const Key('graphql-history-result-count'),
             ),
           ];
-          return constraints.maxWidth < 500
-              ? SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: filters
-                        .expand(
-                          (item) => <Widget>[item, const SizedBox(width: 8)],
-                        )
-                        .toList(growable: false),
-                  ),
-                )
-              : Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: filters,
-                );
+          return Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: filters,
+          );
         },
       ),
       Wrap(

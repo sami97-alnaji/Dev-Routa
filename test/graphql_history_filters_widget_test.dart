@@ -68,13 +68,18 @@ void main() {
       await cubit.refreshHistory();
       await tester.pumpAndSettle();
       final historyScroll = find.byType(Scrollable).first;
+      final outcomeFilter = find.byKey(
+        const Key('graphql-history-outcome-filter'),
+      );
       await tester.scrollUntilVisible(
-        find.byKey(const Key('graphql-history-outcome-filter')),
+        outcomeFilter,
         240,
         scrollable: historyScroll,
       );
+      await tester.drag(historyScroll, const Offset(0, -160));
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const Key('graphql-history-outcome-filter')));
+      await tester.tap(outcomeFilter);
       await tester.pumpAndSettle();
       await tester.tap(find.text('GraphQL error').last);
       await tester.pumpAndSettle();

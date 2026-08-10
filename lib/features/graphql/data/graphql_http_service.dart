@@ -14,7 +14,11 @@ class GraphqlHttpService {
   final SecureStorageService? _secureStorage;
   final Map<String, CancelToken> _cancellations = <String, CancelToken>{};
 
-  Future<GraphqlResponse> execute(String id, GraphqlRequest request) async {
+  Future<GraphqlResponse> execute(
+    String id,
+    GraphqlRequest request, {
+    Set<String> runtimeSecrets = const <String>{},
+  }) async {
     final endpoint = Uri.tryParse(request.endpoint);
     if (endpoint == null ||
         (endpoint.scheme != 'http' && endpoint.scheme != 'https') ||
@@ -157,23 +161,29 @@ class GraphqlHttpService {
           'GraphQL response errors must be an array.',
         );
       }
-      final responseErrors = (rawErrors as List? ?? const <Object?>[])
+      final sanitized =
+          SecretMasker.redactStructured(decoded, runtimeSecrets: runtimeSecrets)
+              as Map;
+      final responseErrors = (sanitized['errors'] as List? ?? const <Object?>[])
           .map(GraphqlResponseError.fromJson)
           .toList(growable: false);
-      final preview = boundedGraphqlPreview(raw);
+      final preview = boundedGraphqlPreview(
+        SecretMasker.redactStructured(raw, runtimeSecrets: runtimeSecrets)
+            as String,
+      );
       final status = response.statusCode;
       final completion = status != null && (status < 200 || status >= 300)
           ? GraphqlCompletionCategory.httpFailure
-          : responseErrors.isNotEmpty && decoded['data'] != null
+          : responseErrors.isNotEmpty && sanitized['data'] != null
           ? GraphqlCompletionCategory.partialSuccess
           : responseErrors.isNotEmpty
           ? GraphqlCompletionCategory.graphqlFailure
           : GraphqlCompletionCategory.success;
       return GraphqlResponse(
         statusCode: status,
-        data: decoded['data'],
+        data: sanitized['data'],
         errors: responseErrors,
-        extensions: decoded['extensions'],
+        extensions: sanitized['extensions'],
         duration: stopwatch.elapsed,
         sizeBytes: utf8.encode(raw).length,
         headers: SecretMasker.redactHeaders(

@@ -119,7 +119,9 @@ class CurlCodec {
     String? quote;
     for (var index = 0; index < input.length; index++) {
       final char = input[index];
-      if (char == '\\' && index + 1 < input.length) {
+      // In POSIX single quotes a backslash is literal. Preserving it is
+      // essential for JSON produced by the GraphQL cURL exporter.
+      if (char == '\\' && quote != "'" && index + 1 < input.length) {
         buffer.write(input[++index]);
         continue;
       }

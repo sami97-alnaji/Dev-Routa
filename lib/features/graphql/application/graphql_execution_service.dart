@@ -47,7 +47,11 @@ class GraphqlExecutionService {
         request,
         environmentId: environmentId,
       );
-      final response = await _http.execute(tabId, resolved.request);
+      final response = await _http.execute(
+        tabId,
+        resolved.request,
+        runtimeSecrets: resolved.runtimeSecrets,
+      );
       await _repository.record(
         draftId: tabId,
         workspaceId: workspaceId,

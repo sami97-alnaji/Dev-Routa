@@ -253,6 +253,22 @@ class GraphqlWorkflowCubit extends Cubit<GraphqlWorkflowState> {
     _setTabs(<GraphqlDraft>[...state.tabs, copy], state.tabs.length);
   }
 
+  /// Imports into a separate dirty tab so a pasted cURL command cannot replace
+  /// unsaved editor state.
+  void importCurl(GraphqlRequest request) {
+    final imported = _newDraft(workspaceId, request: request);
+    final tab = GraphqlDraft(
+      id: imported.id,
+      workspaceId: imported.workspaceId,
+      title: 'Imported GraphQL cURL',
+      request: imported.request,
+      updatedAt: imported.updatedAt,
+      sortOrder: state.tabs.length,
+      isDirty: true,
+    );
+    _setTabs(<GraphqlDraft>[...state.tabs, tab], state.tabs.length);
+  }
+
   void selectTab(int index) {
     if (index >= 0 && index < state.tabs.length) {
       _setTabs(state.tabs, index);

@@ -21,7 +21,12 @@ void main() {
     addTearDown(database.close);
     await tester.pumpWidget(DevRouteApp(database: database));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('GraphQL').last);
+    final graphqlNavigation = find.text('GraphQL');
+    await tester.tap(
+      graphqlNavigation.evaluate().isNotEmpty
+          ? graphqlNavigation.last
+          : find.byTooltip('GraphQL'),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Endpoint'), findsOneWidget);
     return database;
@@ -117,6 +122,53 @@ void main() {
     expect(find.byType(InputChip), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  for (final size in const <Size>[
+    Size(390, 844),
+    Size(600, 800),
+    Size(800, 600),
+    Size(1024, 700),
+  ]) {
+    testWidgets('dirty GraphQL close and naming dialogs fit at $size', (
+      tester,
+    ) async {
+      await openGraphql(tester, size);
+      await makeDirty(tester);
+      await tester.tap(find.byTooltip('Close GraphQL tab'));
+      await tester.pumpAndSettle();
+
+      final closeDialog = find.byType(AlertDialog);
+      expect(
+        find.descendant(of: closeDialog, matching: find.text('Cancel')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: closeDialog, matching: find.text('Discard')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: closeDialog, matching: find.text('Save')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(
+        find.descendant(of: closeDialog, matching: find.text('Save')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Save GraphQL request'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Cancel'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('saving a new dirty tab asks for a non-empty name before close', (
     tester,

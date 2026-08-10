@@ -265,8 +265,16 @@ class _RealtimeScreenState extends State<RealtimeScreen>
       return Row(
         children: [
           Text('Realtime', style: Theme.of(context).textTheme.headlineMedium),
-          const Spacer(),
-          selector,
+          const SizedBox(width: 16),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: selector,
+              ),
+            ),
+          ),
         ],
       );
     },

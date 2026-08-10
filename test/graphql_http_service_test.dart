@@ -54,6 +54,15 @@ void main() {
             ],
           }),
         );
+      } else if (query.contains('ReflectedSecret')) {
+        request.response.write(
+          jsonEncode(<String, Object?>{
+            'data': <String, Object?>{'echo': 'runtime-secret'},
+            'errors': <Object?>[
+              <String, Object?>{'message': 'token=runtime-secret'},
+            ],
+          }),
+        );
       } else {
         request.response.write(
           jsonEncode(<String, Object?>{
@@ -206,6 +215,24 @@ void main() {
       ),
     );
   });
+
+  test(
+    'runtime secrets are redacted before the response reaches state',
+    () async {
+      final response = await GraphqlHttpService().execute(
+        'reflected-secret',
+        GraphqlRequest(
+          endpoint: endpoint,
+          document: 'query ReflectedSecret { echo }',
+        ),
+        runtimeSecrets: const <String>{'runtime-secret'},
+      );
+
+      expect(response.data.toString(), isNot(contains('runtime-secret')));
+      expect(response.errors.single.message, 'token=[REDACTED]');
+      expect(response.rawPreview, isNot(contains('runtime-secret')));
+    },
+  );
 
   test('bounded preview preserves Unicode and byte size', () {
     final preview = boundedGraphqlPreview('مرحبا 😀 world', maxBytes: 10);

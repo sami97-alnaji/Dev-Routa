@@ -3,9 +3,12 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter/services.dart';
 
 import '../../../shared/models/api_models.dart';
+import '../application/graphql_curl_codec.dart';
 import '../data/graphql_repository.dart';
+import '../application/graphql_safe_export_service.dart';
 import '../application/graphql_schema_cubit.dart';
 import '../application/graphql_subscription_service.dart';
 import '../domain/graphql_document_parser.dart';
@@ -34,6 +37,8 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
   final _secretRef = TextEditingController();
   final _username = TextEditingController();
   final _search = TextEditingController();
+  final _curlCodec = GraphqlCurlCodec();
+  final _exportService = GraphqlSafeExportService();
 
   @override
   void dispose() {
@@ -181,6 +186,127 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
     return result;
   }
 
+  Future<void> _importCurl(
+    BuildContext context,
+    GraphqlWorkflowCubit cubit,
+  ) async {
+    final controller = TextEditingController();
+    var diagnostics = const <String>[];
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Import GraphQL cURL'),
+          content: SizedBox(
+            width: 640,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  key: const Key('graphql-curl-import-input'),
+                  controller: controller,
+                  minLines: 4,
+                  maxLines: 10,
+                  decoration: const InputDecoration(
+                    hintText: 'Paste a GraphQL cURL command',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                if (diagnostics.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    diagnostics.join('\n'),
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              key: const Key('graphql-curl-import-submit'),
+              onPressed: () {
+                final result = _curlCodec.importCommand(controller.text);
+                if (!result.isSuccess) {
+                  setDialogState(() => diagnostics = result.diagnostics);
+                  return;
+                }
+                cubit.importCurl(result.request!);
+                Navigator.pop(dialogContext);
+                if (result.diagnostics.isNotEmpty && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(result.diagnostics.join('\n'))),
+                  );
+                }
+              },
+              child: const Text('Import'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+  }
+
+  Future<void> _exportRequest(
+    BuildContext context,
+    GraphqlRequest request,
+  ) async => _export(context, () => _exportService.exportRequest(request));
+
+  Future<void> _copyCurl(BuildContext context, GraphqlRequest request) async {
+    try {
+      await Clipboard.setData(
+        ClipboardData(text: _curlCodec.exportCommand(request)),
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Redacted GraphQL cURL copied.')),
+        );
+      }
+    } on Object {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not copy GraphQL cURL.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _exportResponse(
+    BuildContext context,
+    GraphqlResponse response,
+  ) async => _export(context, () => _exportService.exportResponse(response));
+
+  Future<void> _exportHistory(
+    BuildContext context,
+    GraphqlHistoryEntry entry,
+  ) async => _export(context, () => _exportService.exportHistory(entry));
+
+  Future<void> _export(
+    BuildContext context,
+    Future<Object> Function() action,
+  ) async {
+    try {
+      await action();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Exported redacted GraphQL JSON.')),
+        );
+      }
+    } on Object {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('GraphQL export failed safely.')),
+        );
+      }
+    }
+  }
+
   Future<void> _closeTab(
     BuildContext context,
     GraphqlWorkflowCubit cubit,
@@ -193,6 +319,9 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
         builder: (dialogContext) => AlertDialog(
           title: const Text('Unsaved GraphQL changes'),
           content: Text('Save changes to "${tab.title}" before closing?'),
+          actionsOverflowDirection: VerticalDirection.down,
+          actionsOverflowAlignment: OverflowBarAlignment.end,
+          actionsOverflowButtonSpacing: 8,
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, 'cancel'),
@@ -640,6 +769,32 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
                 ),
               ),
               OutlinedButton.icon(
+                key: const Key('open-graphql-curl-import'),
+                onPressed: () => _importCurl(context, cubit),
+                icon: const Icon(Icons.content_paste_go_outlined),
+                label: const Text('Import cURL'),
+              ),
+              OutlinedButton.icon(
+                key: const Key('copy-graphql-curl'),
+                onPressed: () => _copyCurl(context, draft.request),
+                icon: const Icon(Icons.copy_outlined),
+                label: const Text('Copy cURL'),
+              ),
+              OutlinedButton.icon(
+                key: const Key('export-graphql-request'),
+                onPressed: () => _exportRequest(context, draft.request),
+                icon: const Icon(Icons.download_outlined),
+                label: const Text('Export request'),
+              ),
+              OutlinedButton.icon(
+                key: const Key('export-graphql-response'),
+                onPressed: execution.response == null
+                    ? null
+                    : () => _exportResponse(context, execution.response!),
+                icon: const Icon(Icons.download_outlined),
+                label: const Text('Export response'),
+              ),
+              OutlinedButton.icon(
                 key: const Key('open-graphql-schema-explorer'),
                 onPressed: () =>
                     _openSchemaExplorer(context, draft.request, cubit),
@@ -698,6 +853,7 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
         onClearFilters: cubit.clearHistoryFilters,
         onReplay: cubit.replayHistory,
         onDelete: (entry) => cubit.deleteHistory(entry.id),
+        onExport: (entry) => _exportHistory(context, entry),
       );
       return MediaQuery.sizeOf(context).width < 900
           ? ListView(
@@ -708,7 +864,10 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
                 const Divider(),
                 SizedBox(height: 260, child: saved),
                 const Divider(),
-                SizedBox(height: 262, child: history),
+                SizedBox(
+                  height: MediaQuery.sizeOf(context).width < 500 ? 420 : 312,
+                  child: history,
+                ),
               ],
             )
           : Row(
@@ -717,9 +876,9 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
                   width: 280,
                   child: Column(
                     children: [
-                      Expanded(child: saved),
+                      Expanded(flex: 2, child: saved),
                       const Divider(),
-                      Expanded(child: history),
+                      Expanded(flex: 3, child: history),
                     ],
                   ),
                 ),
@@ -923,6 +1082,7 @@ class _HistoryPanel extends StatefulWidget {
     required this.onClearFilters,
     required this.onReplay,
     required this.onDelete,
+    required this.onExport,
   });
 
   final List<GraphqlHistoryEntry> entries;
@@ -940,6 +1100,7 @@ class _HistoryPanel extends StatefulWidget {
   final VoidCallback onClearFilters;
   final ValueChanged<GraphqlHistoryEntry> onReplay;
   final ValueChanged<GraphqlHistoryEntry> onDelete;
+  final Future<void> Function(GraphqlHistoryEntry) onExport;
 
   @override
   State<_HistoryPanel> createState() => _HistoryPanelState();
@@ -1026,55 +1187,67 @@ class _HistoryPanelState extends State<_HistoryPanel> {
       LayoutBuilder(
         builder: (context, constraints) {
           final filters = <Widget>[
-            DropdownButton<GraphqlHistoryOutcomeFilter>(
-              key: const Key('graphql-history-outcome-filter'),
-              value: widget.outcome,
-              onChanged: (value) {
-                if (value != null) widget.onOutcome(value);
-              },
-              items: GraphqlHistoryOutcomeFilter.values
-                  .map(
+            SizedBox(
+              width: constraints.maxWidth < 320 ? constraints.maxWidth : null,
+              child: DropdownButton<GraphqlHistoryOutcomeFilter>(
+                key: const Key('graphql-history-outcome-filter'),
+                isExpanded: constraints.maxWidth < 320,
+                value: widget.outcome,
+                onChanged: (value) {
+                  if (value != null) widget.onOutcome(value);
+                },
+                items: GraphqlHistoryOutcomeFilter.values
+                    .map(
+                      (value) => DropdownMenuItem(
+                        value: value,
+                        child: Text(_outcomeLabel(value)),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+            SizedBox(
+              width: constraints.maxWidth < 320 ? constraints.maxWidth : null,
+              child: DropdownButton<GraphqlOperationType?>(
+                key: const Key('graphql-history-operation-filter'),
+                isExpanded: constraints.maxWidth < 320,
+                value: widget.operationType,
+                onChanged: widget.onOperationType,
+                items: <DropdownMenuItem<GraphqlOperationType?>>[
+                  const DropdownMenuItem(
+                    value: null,
+                    child: Text('All operations'),
+                  ),
+                  ...GraphqlOperationType.values.map(
+                    (value) =>
+                        DropdownMenuItem(value: value, child: Text(value.name)),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              width: constraints.maxWidth < 500 ? constraints.maxWidth : null,
+              child: DropdownButton<String?>(
+                key: const Key('graphql-history-endpoint-filter'),
+                isExpanded: constraints.maxWidth < 500,
+                value: widget.endpoint,
+                onChanged: widget.onEndpoint,
+                items: <DropdownMenuItem<String?>>[
+                  const DropdownMenuItem(
+                    value: null,
+                    child: Text('All endpoints'),
+                  ),
+                  ...widget.endpoints.map(
                     (value) => DropdownMenuItem(
                       value: value,
-                      child: Text(_outcomeLabel(value)),
-                    ),
-                  )
-                  .toList(),
-            ),
-            DropdownButton<GraphqlOperationType?>(
-              key: const Key('graphql-history-operation-filter'),
-              value: widget.operationType,
-              onChanged: widget.onOperationType,
-              items: <DropdownMenuItem<GraphqlOperationType?>>[
-                const DropdownMenuItem(
-                  value: null,
-                  child: Text('All operations'),
-                ),
-                ...GraphqlOperationType.values.map(
-                  (value) =>
-                      DropdownMenuItem(value: value, child: Text(value.name)),
-                ),
-              ],
-            ),
-            DropdownButton<String?>(
-              key: const Key('graphql-history-endpoint-filter'),
-              value: widget.endpoint,
-              onChanged: widget.onEndpoint,
-              items: <DropdownMenuItem<String?>>[
-                const DropdownMenuItem(
-                  value: null,
-                  child: Text('All endpoints'),
-                ),
-                ...widget.endpoints.map(
-                  (value) => DropdownMenuItem(
-                    value: value,
-                    child: Text(
-                      _safeEndpointLabel(value),
-                      overflow: TextOverflow.ellipsis,
+                      child: Text(
+                        _safeEndpointLabel(value),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             if (widget.hasActiveFilters)
               TextButton(
@@ -1087,24 +1260,12 @@ class _HistoryPanelState extends State<_HistoryPanel> {
               key: const Key('graphql-history-result-count'),
             ),
           ];
-          return constraints.maxWidth < 500
-              ? SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: filters
-                        .expand(
-                          (item) => <Widget>[item, const SizedBox(width: 8)],
-                        )
-                        .toList(growable: false),
-                  ),
-                )
-              : Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: filters,
-                );
+          return Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: filters,
+          );
         },
       ),
       Wrap(
@@ -1144,10 +1305,20 @@ class _HistoryPanelState extends State<_HistoryPanel> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 onTap: () => widget.onReplay(entry),
-                trailing: IconButton(
-                  tooltip: 'Delete history',
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () => widget.onDelete(entry),
+                trailing: Wrap(
+                  spacing: 0,
+                  children: [
+                    IconButton(
+                      tooltip: 'Export history',
+                      icon: const Icon(Icons.download_outlined),
+                      onPressed: () => unawaited(widget.onExport(entry)),
+                    ),
+                    IconButton(
+                      tooltip: 'Delete history',
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => widget.onDelete(entry),
+                    ),
+                  ],
                 ),
               ),
           ],

@@ -17,7 +17,7 @@ void main() {
     await tester.pumpWidget(DevRouteApp(database: database));
     await tester.pumpAndSettle();
     expect(find.text('Workspace'), findsWidgets);
-    await tester.tap(find.text('Requests').first);
+    await tester.tap(find.byTooltip('Requests'));
     await tester.pumpAndSettle();
     expect(find.text('Request name'), findsOneWidget);
     expect(find.text('Params'), findsOneWidget);
@@ -59,15 +59,15 @@ void main() {
     addTearDown(database.close);
     await tester.pumpWidget(DevRouteApp(database: database));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Environments').first);
+    await tester.tap(find.byTooltip('Environments'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'New'));
+    await tester.tap(find.widgetWithText(FilledButton, 'New').last);
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'Local QA');
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));
     await tester.pumpAndSettle();
-    expect(find.text('Local QA'), findsOneWidget);
-    await tester.tap(find.text('Local QA'));
+    expect(find.text('Local QA'), findsWidgets);
+    await tester.tap(find.text('Local QA').last);
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Add'));
     await tester.pumpAndSettle();
@@ -91,13 +91,13 @@ void main() {
       addTearDown(database.close);
       await tester.pumpWidget(DevRouteApp(database: database));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Realtime').first);
+      await tester.tap(find.byTooltip('Realtime'));
       await tester.pumpAndSettle();
       expect(find.text('Session'), findsOneWidget);
       expect(find.byKey(const Key('realtime-url')), findsOneWidget);
-      await tester.tap(find.byTooltip('New independent session (Ctrl+N)'));
+      await tester.tap(find.byTooltip('New tab'));
       await tester.pumpAndSettle();
-      expect(find.byType(InputChip), findsNWidgets(2));
+      expect(find.byTooltip('Close tab'), findsNWidgets(2));
       await tester.tap(find.text('History').last);
       await tester.pumpAndSettle();
       expect(find.text('Compare selected'), findsOneWidget);
@@ -132,4 +132,23 @@ void main() {
       expect(find.text('Leave realtime session?'), findsOneWidget);
     },
   );
+
+  testWidgets('desktop workbench explorer collapses without losing Requests', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final database = AppDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(database.close);
+    await tester.pumpWidget(DevRouteApp(database: database));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Hide explorer (Ctrl+B)').first);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Show explorer (Ctrl+B)'), findsOneWidget);
+    await tester.tap(find.byTooltip('Requests'));
+    await tester.pumpAndSettle();
+    expect(find.text('Untitled request'), findsWidgets);
+  });
 }

@@ -14,6 +14,7 @@ import '../../../core/rest/variable_resolution_service.dart';
 import '../../../core/security/secret_masker.dart';
 import '../../../core/storage/local_workspace_repository.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/devroute_desktop.dart';
 import '../../../features/realtime/presentation/realtime_screen.dart';
 import '../../../features/graphql/presentation/graphql_screen.dart';
 import '../../../features/graphql/data/graphql_repository.dart';
@@ -22,9 +23,14 @@ import '../../../features/graphql/application/graphql_schema_cubit.dart';
 import '../../../features/graphql/presentation/graphql_workflow_cubit.dart';
 import '../../../features/graphql/application/graphql_execution_service.dart';
 import '../../../features/graphql/application/graphql_subscription_service.dart';
+import '../../../features/ai_assistant/application/codex_agents_controller.dart';
+import '../../../features/ai_assistant/presentation/ai_agents_screen.dart';
+import '../../../features/grpc/presentation/grpc_screen.dart';
 import '../../../shared/models/api_models.dart';
 import '../../requests/presentation/request_workflow_cubit.dart';
 import 'workspace_cubit.dart';
+import 'workbench_explorer.dart';
+import 'workbench_layout_preferences.dart';
 
 class _ShellDestination {
   const _ShellDestination({
@@ -92,6 +98,21 @@ const _shellDestinations = <_ShellDestination>[
     icon: Icons.account_tree_outlined,
     selectedIcon: Icons.account_tree_rounded,
   ),
+  _ShellDestination(
+    label: 'gRPC',
+    compactLabel: 'gRPC',
+    description: 'Inspect descriptors, invoke services, and review history.',
+    icon: Icons.swap_calls_outlined,
+    selectedIcon: Icons.swap_calls_rounded,
+  ),
+  _ShellDestination(
+    label: 'AI Agents',
+    compactLabel: 'Agents',
+    description:
+        'Connect to official subscription agents and inspect readiness.',
+    icon: Icons.smart_toy_outlined,
+    selectedIcon: Icons.smart_toy_rounded,
+  ),
 ];
 
 class AppShell extends StatefulWidget {
@@ -114,6 +135,15 @@ class _AppShellState extends State<AppShell> {
   StreamSubscription<GraphqlWorkflowState>? _graphqlStateSubscription;
   bool _allowExit = false;
   bool _exitDialogOpen = false;
+  bool _sidebarCollapsed = false;
+  double _sidebarWidth = 252;
+  double _requestEditorHeight = 292;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_restoreWorkbenchLayout());
+  }
 
   @override
   void dispose() {
@@ -126,8 +156,9 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    final rail = width >= 840;
-    final expandedRail = width >= 1180;
+    final rail = width >= 720;
+    final explorerAvailable = width >= 960;
+    final explorerVisible = explorerAvailable && !_sidebarCollapsed;
     final requestState = context.watch<RequestWorkflowCubit>().state;
     final graphqlDirty = _graphqlWorkflow?.state.hasAnyDirty ?? false;
     return CallbackShortcuts(
@@ -136,6 +167,8 @@ class _AppShellState extends State<AppShell> {
             _openCommandPalette,
         const SingleActivator(LogicalKeyboardKey.keyN, control: true):
             _newRequest,
+        const SingleActivator(LogicalKeyboardKey.keyB, control: true):
+            _toggleSidebar,
       },
       child: Focus(
         autofocus: true,
@@ -166,13 +199,23 @@ class _AppShellState extends State<AppShell> {
             body: rail
                 ? Row(
                     children: [
-                      _NavigationSidebar(
-                        expanded: expandedRail,
-                        selected: _selected,
-                        onSelect: _select,
-                        onNewRequest: _newRequest,
-                      ),
+                      _ActivityRail(selected: _selected, onSelect: _select),
                       const VerticalDivider(width: 1),
+                      if (explorerVisible) ...[
+                        SizedBox(
+                          width: _sidebarWidth,
+                          child: WorkbenchExplorer(
+                            onClose: _toggleSidebar,
+                            onOpenRequests: () => _select(1),
+                            onOpenHistory: () => _select(2),
+                          ),
+                        ),
+                        DevRouteSplitter(
+                          axis: Axis.horizontal,
+                          onDrag: _changeSidebarWidth,
+                          onReset: _resetSidebarWidth,
+                        ),
+                      ],
                       Expanded(child: _mainContent(rail: true)),
                     ],
                   )
@@ -186,6 +229,53 @@ class _AppShellState extends State<AppShell> {
 
   void _select(int value) => setState(() => _selected = value);
 
+  void _toggleSidebar() {
+    setState(() => _sidebarCollapsed = !_sidebarCollapsed);
+    _persistWorkbenchLayout();
+  }
+
+  Future<void> _restoreWorkbenchLayout() async {
+    final layout = await WorkbenchLayoutPreferences.load();
+    if (!mounted) return;
+    setState(() {
+      _sidebarWidth = layout.sidebarWidth;
+      _sidebarCollapsed = layout.sidebarCollapsed;
+      _requestEditorHeight = layout.requestEditorHeight;
+    });
+  }
+
+  void _persistWorkbenchLayout() => unawaited(
+    WorkbenchLayoutPreferences.save(
+      WorkbenchLayoutSnapshot(
+        sidebarWidth: _sidebarWidth,
+        sidebarCollapsed: _sidebarCollapsed,
+        requestEditorHeight: _requestEditorHeight,
+      ),
+    ),
+  );
+
+  void _changeSidebarWidth(double delta) {
+    setState(() => _sidebarWidth = (_sidebarWidth + delta).clamp(180, 420));
+    _persistWorkbenchLayout();
+  }
+
+  void _resetSidebarWidth() {
+    setState(() => _sidebarWidth = 252);
+    _persistWorkbenchLayout();
+  }
+
+  void _changeRequestEditorHeight(double delta) {
+    setState(() {
+      _requestEditorHeight = (_requestEditorHeight + delta).clamp(180, 520);
+    });
+    _persistWorkbenchLayout();
+  }
+
+  void _resetRequestEditorHeight() {
+    setState(() => _requestEditorHeight = 292);
+    _persistWorkbenchLayout();
+  }
+
   void _newRequest() {
     context.read<RequestWorkflowCubit>().newRequest(
       collectionId: context.read<WorkspaceCubit>().state.selectedCollectionId,
@@ -195,11 +285,14 @@ class _AppShellState extends State<AppShell> {
 
   Widget _mainContent({required bool rail}) {
     final width = MediaQuery.sizeOf(context).width;
-    final padding = width >= 1180
-        ? const EdgeInsets.fromLTRB(32, 22, 32, 28)
+    // On desktop, panes own their padding and meet at dividers like a real
+    // workbench.  A global floating margin was making every destination read
+    // as a separate Flutter card.
+    final padding = rail
+        ? EdgeInsets.zero
         : width >= 600
-        ? const EdgeInsets.fromLTRB(24, 20, 24, 24)
-        : const EdgeInsets.fromLTRB(16, 10, 16, 16);
+        ? const EdgeInsets.fromLTRB(12, 10, 12, 12)
+        : const EdgeInsets.fromLTRB(8, 8, 8, 8);
     return Column(
       children: [
         if (rail)
@@ -207,6 +300,9 @@ class _AppShellState extends State<AppShell> {
             destination: _shellDestinations[_selected],
             onNewRequest: _newRequest,
             onCommandPalette: _openCommandPalette,
+            sidebarAvailable: width >= 960,
+            sidebarVisible: width >= 960 && !_sidebarCollapsed,
+            onToggleSidebar: _toggleSidebar,
           ),
         Expanded(
           child: SafeArea(
@@ -228,37 +324,108 @@ class _AppShellState extends State<AppShell> {
           () => _select(i),
         ),
     ];
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => Dialog(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560, maxHeight: 520),
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.all(10),
-            children: [
-              const ListTile(
-                leading: Icon(Icons.search_rounded),
-                title: Text('Command Palette'),
-                subtitle: Text(
-                  'Move through DevRoute without leaving your flow.',
+    final filter = TextEditingController();
+    var query = '';
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            final words = query
+                .toLowerCase()
+                .split(RegExp(r'\s+'))
+                .where((word) => word.isNotEmpty);
+            final visible = commands
+                .where(
+                  (command) => words.every(
+                    (word) => command.$1.toLowerCase().contains(word),
+                  ),
+                )
+                .toList();
+            void runFirst() {
+              if (visible.isEmpty) return;
+              Navigator.pop(dialogContext);
+              visible.first.$3();
+            }
+
+            return Dialog(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        key: const Key('command-palette-filter'),
+                        controller: filter,
+                        autofocus: true,
+                        textInputAction: TextInputAction.go,
+                        onChanged: (value) =>
+                            setDialogState(() => query = value.trim()),
+                        onSubmitted: (_) => runFirst(),
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.search_rounded),
+                          hintText: 'Search commands…',
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
+                        child: Text(
+                          query.isEmpty
+                              ? 'QUICK ACTIONS'
+                              : '${visible.length} MATCHING COMMANDS',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                      ),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 360),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: visible.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 2),
+                          itemBuilder: (context, index) {
+                            final command = visible[index];
+                            return ListTile(
+                              dense: true,
+                              leading: Icon(command.$2, size: 18),
+                              title: Text(command.$1),
+                              trailing: index == 0
+                                  ? Text(
+                                      '↵',
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.labelSmall,
+                                    )
+                                  : null,
+                              onTap: () {
+                                Navigator.pop(dialogContext);
+                                command.$3();
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                      if (visible.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(20),
+                          child: Text(
+                            'No command matches this search.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-              const Divider(),
-              for (final command in commands)
-                ListTile(
-                  leading: Icon(command.$2),
-                  title: Text(command.$1),
-                  onTap: () {
-                    Navigator.pop(dialogContext);
-                    command.$3();
-                  },
-                ),
-            ],
-          ),
+            );
+          },
         ),
-      ),
-    );
+      );
+    } finally {
+      filter.dispose();
+    }
   }
 
   Widget _compactNavigation() => NavigationBar(
@@ -316,26 +483,29 @@ class _AppShellState extends State<AppShell> {
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final index in const [2, 3, 4])
-                ListTile(
-                  leading: Icon(_shellDestinations[index].icon),
-                  title: Text(_shellDestinations[index].label),
-                  subtitle: Text(_shellDestinations[index].description),
-                  trailing: _selected == index
-                      ? const Icon(Icons.check_rounded)
-                      : null,
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _select(index);
-                  },
-                ),
-            ],
+        child: FractionallySizedBox(
+          heightFactor: 0.68,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
+            child: ListView(
+              children: [
+                for (final index in const [2, 3, 4, 7, 8])
+                  ListTile(
+                    leading: Icon(_shellDestinations[index].icon),
+                    title: Text(_shellDestinations[index].label),
+                    subtitle: Text(_shellDestinations[index].description),
+                    trailing: _selected == index
+                        ? const Icon(Icons.check_rounded)
+                        : null,
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _select(index);
+                    },
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -349,7 +519,7 @@ class _AppShellState extends State<AppShell> {
     3 => _environments(),
     4 => _settings(),
     5 => const RealtimeScreen(),
-    _ => BlocBuilder<WorkspaceCubit, WorkspaceState>(
+    6 => BlocBuilder<WorkspaceCubit, WorkspaceState>(
       builder: (context, state) {
         final workspaceId = state.selectedWorkspaceId;
         if (workspaceId == null) {
@@ -379,6 +549,14 @@ class _AppShellState extends State<AppShell> {
         );
       },
     ),
+    7 => const GrpcScreen(),
+    8 => BlocBuilder<WorkspaceCubit, WorkspaceState>(
+      builder: (context, state) => AiAgentsScreen(
+        controller: context.read<CodexAgentsService>().controller,
+        workspaceId: state.selectedWorkspaceId ?? '',
+      ),
+    ),
+    _ => _workspace(),
   };
 
   GraphqlWorkflowCubit _ensureGraphqlWorkflow(String workspaceId) {
@@ -406,25 +584,33 @@ class _AppShellState extends State<AppShell> {
       if (state.loading) {
         return const Center(child: CircularProgressIndicator());
       }
+      final activeWorkspace = state.workspaces
+          .where((item) => item.id == state.selectedWorkspaceId)
+          .firstOrNull;
+      final selectedCollection = state.collections
+          .where((item) => item.id == state.selectedCollectionId)
+          .firstOrNull;
+      final activeCollectionRequests = selectedCollection == null
+          ? const <ApiRequestModel>[]
+          : state.savedRequests
+                .where((item) => item.collectionId == selectedCollection.id)
+                .toList();
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                'Workspace',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              DropdownButton<String>(
+          DevRoutePageBar(
+            compact: MediaQuery.sizeOf(context).width < 700,
+            eyebrow: 'Workspace',
+            title: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
                 value: state.selectedWorkspaceId,
+                isDense: true,
+                isExpanded: true,
                 items: state.workspaces
                     .map(
                       (item) => DropdownMenuItem(
                         value: item.id,
-                        child: Text(item.name),
+                        child: Text(item.name, overflow: TextOverflow.ellipsis),
                       ),
                     )
                     .toList(),
@@ -432,274 +618,572 @@ class _AppShellState extends State<AppShell> {
                   if (id != null) cubit.selectWorkspace(id);
                 },
               ),
-              IconButton(
-                tooltip: 'New workspace',
-                onPressed: () async {
-                  final name = await _askName('New workspace');
-                  if (name != null) cubit.addWorkspace(name);
-                },
-                icon: const Icon(Icons.add_business_outlined),
-              ),
-              IconButton(
-                tooltip: 'Rename workspace',
-                onPressed: state.selectedWorkspaceId == null
-                    ? null
-                    : () async {
-                        final current = state.workspaces.firstWhere(
-                          (item) => item.id == state.selectedWorkspaceId,
-                        );
+            ),
+            detail:
+                '${state.collections.length} collections · ${state.savedRequests.length} saved requests',
+            trailing: Wrap(
+              spacing: 4,
+              children: [
+                IconButton(
+                  tooltip: 'New workspace',
+                  onPressed: () async {
+                    final name = await _askName('New workspace');
+                    if (name != null) cubit.addWorkspace(name);
+                  },
+                  icon: const Icon(Icons.add_business_outlined),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: 'Workspace actions',
+                  enabled: activeWorkspace != null,
+                  onSelected: (action) async {
+                    if (activeWorkspace == null) return;
+                    switch (action) {
+                      case 'rename':
                         final name = await _askName(
                           'Rename workspace',
-                          initial: current.name,
+                          initial: activeWorkspace.name,
                         );
                         if (name != null) {
-                          cubit.renameWorkspace(current.id, name);
+                          cubit.renameWorkspace(activeWorkspace.id, name);
                         }
-                      },
-                icon: const Icon(Icons.edit_outlined),
-              ),
-              IconButton(
-                tooltip: 'Delete workspace',
-                onPressed: state.workspaces.length <= 1
-                    ? null
-                    : () async {
-                        if (await _confirm(
-                          'Delete workspace?',
-                          'Collections, requests, environments, drafts, and their secret references will be removed.',
-                        )) {
-                          cubit.removeWorkspace(state.selectedWorkspaceId!);
+                      case 'delete':
+                        if (state.workspaces.length > 1 &&
+                            await _confirm(
+                              'Delete workspace?',
+                              'Collections, requests, environments, drafts, and their secret references will be removed.',
+                            )) {
+                          cubit.removeWorkspace(activeWorkspace.id);
                         }
-                      },
-                icon: const Icon(Icons.delete_outline),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            onChanged: cubit.search,
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search),
-              hintText: 'Search collections, requests, URLs, and history',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: ListView(
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      'Collections',
-                      style: Theme.of(context).textTheme.titleLarge,
+                    }
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'rename',
+                      child: Text('Rename workspace'),
                     ),
-                    const Spacer(),
-                    FilledButton.icon(
-                      onPressed: () async {
-                        final name = await _askName('New collection');
-                        if (name != null) cubit.addCollection(name);
-                      },
-                      icon: const Icon(Icons.create_new_folder_outlined),
-                      label: const Text('New'),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Delete workspace'),
                     ),
                   ],
+                  child: const Padding(
+                    padding: EdgeInsets.all(7),
+                    child: Icon(Icons.more_horiz, size: 19),
+                  ),
                 ),
-                for (final item in state.collections)
-                  Card(
-                    child: ListTile(
-                      selected: item.id == state.selectedCollectionId,
-                      leading: const Icon(Icons.folder_outlined),
-                      title: Text(item.name),
-                      onTap: () => cubit.selectCollection(item.id),
-                      trailing: Wrap(
-                        children: [
-                          IconButton(
-                            tooltip: 'Move up',
-                            onPressed: state.collections.indexOf(item) == 0
-                                ? null
-                                : () => cubit.reorderCollection(
-                                    item.id,
-                                    state.collections.indexOf(item) - 1,
-                                  ),
-                            icon: const Icon(Icons.arrow_upward),
-                          ),
-                          IconButton(
-                            tooltip: 'Move down',
-                            onPressed:
-                                state.collections.indexOf(item) ==
-                                    state.collections.length - 1
-                                ? null
-                                : () => cubit.reorderCollection(
-                                    item.id,
-                                    state.collections.indexOf(item) + 1,
-                                  ),
-                            icon: const Icon(Icons.arrow_downward),
-                          ),
-                          IconButton(
-                            tooltip: 'Move to workspace',
-                            onPressed: () => _moveCollection(item),
-                            icon: const Icon(Icons.drive_file_move_outline),
-                          ),
-                          IconButton(
-                            tooltip: 'Duplicate collection',
-                            onPressed: () => cubit.duplicateCollection(item.id),
-                            icon: const Icon(Icons.copy_outlined),
-                          ),
-                          IconButton(
-                            tooltip: 'Rename',
-                            onPressed: () async {
-                              final name = await _askName(
-                                'Rename collection',
-                                initial: item.name,
-                              );
-                              if (name != null) {
-                                cubit.renameCollection(item.id, name);
-                              }
-                            },
-                            icon: const Icon(Icons.edit_outlined),
-                          ),
-                          IconButton(
-                            tooltip: 'Delete',
-                            onPressed: () async {
-                              if (await _confirm(
-                                'Delete collection?',
-                                'Its folders, requests, drafts, and secret references will be removed.',
-                              )) {
-                                cubit.removeCollection(item.id);
-                              }
-                            },
-                            icon: const Icon(Icons.delete_outline),
-                          ),
-                        ],
-                      ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const Key('workspace-search'),
+                    onChanged: cubit.search,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search_rounded, size: 18),
+                      hintText:
+                          'Search requests, collections, URLs, and history',
                     ),
                   ),
-                if (state.selectedCollectionId != null) ...[
-                  const Divider(),
-                  Row(
-                    children: [
-                      Text(
-                        'Folders',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const Spacer(),
-                      TextButton.icon(
-                        onPressed: () async {
-                          final name = await _askName('New folder');
-                          if (name != null) cubit.addFolder(name);
-                        },
-                        icon: const Icon(Icons.create_new_folder_outlined),
-                        label: const Text('Add folder'),
-                      ),
-                    ],
+                ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  onPressed: _newRequest,
+                  icon: const Icon(Icons.add_rounded, size: 17),
+                  label: const Text('New request'),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 820;
+                final collectionsPane = DevRoutePane(
+                  title: 'Collections',
+                  subtitle: '${state.collections.length} in this workspace',
+                  trailing: IconButton(
+                    tooltip: 'New collection',
+                    onPressed: () async {
+                      final name = await _askName('New collection');
+                      if (name != null) cubit.addCollection(name);
+                    },
+                    icon: const Icon(
+                      Icons.create_new_folder_outlined,
+                      size: 18,
+                    ),
                   ),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final folder in state.folders)
-                        ActionChip(
-                          avatar: Icon(
-                            folder.parentFolderId == null
-                                ? Icons.folder_outlined
-                                : Icons.subdirectory_arrow_right,
+                  child: state.collections.isEmpty
+                      ? DevRouteEmptyState(
+                          icon: Icons.folder_open_outlined,
+                          title: 'Start with a collection',
+                          message:
+                              'Group requests by service, then keep drafts and environments beside the work.',
+                          action: OutlinedButton.icon(
+                            onPressed: () async {
+                              final name = await _askName('New collection');
+                              if (name != null) cubit.addCollection(name);
+                            },
+                            icon: const Icon(
+                              Icons.create_new_folder_outlined,
+                              size: 17,
+                            ),
+                            label: const Text('Create collection'),
                           ),
-                          label: Text(folder.name),
-                          onPressed: () => _folderActions(folder),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          itemCount: state.collections.length,
+                          separatorBuilder: (_, _) => const Divider(
+                            height: 1,
+                            indent: 10,
+                            endIndent: 10,
+                          ),
+                          itemBuilder: (context, index) {
+                            final item = state.collections[index];
+                            final selected =
+                                item.id == state.selectedCollectionId;
+                            final requestCount = state.savedRequests
+                                .where(
+                                  (request) => request.collectionId == item.id,
+                                )
+                                .length;
+                            return Material(
+                              color: selected
+                                  ? Theme.of(
+                                      context,
+                                    ).colorScheme.primary.withValues(alpha: .12)
+                                  : Colors.transparent,
+                              child: InkWell(
+                                onTap: () => cubit.selectCollection(item.id),
+                                child: SizedBox(
+                                  height: 46,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: 12,
+                                      right: 5,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 3,
+                                          height: 26,
+                                          color: selected
+                                              ? Theme.of(
+                                                  context,
+                                                ).colorScheme.primary
+                                              : Colors.transparent,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Icon(
+                                          selected
+                                              ? Icons.folder_open_outlined
+                                              : Icons.folder_outlined,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 9),
+                                        Expanded(
+                                          child: Text(
+                                            item.name,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: Theme.of(
+                                              context,
+                                            ).textTheme.labelLarge,
+                                          ),
+                                        ),
+                                        Text(
+                                          '$requestCount',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.labelSmall,
+                                        ),
+                                        PopupMenuButton<String>(
+                                          tooltip: 'Collection actions',
+                                          onSelected: (action) async {
+                                            switch (action) {
+                                              case 'up':
+                                                if (index > 0) {
+                                                  cubit.reorderCollection(
+                                                    item.id,
+                                                    index - 1,
+                                                  );
+                                                }
+                                              case 'down':
+                                                if (index <
+                                                    state.collections.length -
+                                                        1) {
+                                                  cubit.reorderCollection(
+                                                    item.id,
+                                                    index + 1,
+                                                  );
+                                                }
+                                              case 'move':
+                                                await _moveCollection(item);
+                                              case 'duplicate':
+                                                cubit.duplicateCollection(
+                                                  item.id,
+                                                );
+                                              case 'rename':
+                                                final name = await _askName(
+                                                  'Rename collection',
+                                                  initial: item.name,
+                                                );
+                                                if (name != null) {
+                                                  cubit.renameCollection(
+                                                    item.id,
+                                                    name,
+                                                  );
+                                                }
+                                              case 'delete':
+                                                if (await _confirm(
+                                                  'Delete collection?',
+                                                  'Its folders, requests, drafts, and secret references will be removed.',
+                                                )) {
+                                                  cubit.removeCollection(
+                                                    item.id,
+                                                  );
+                                                }
+                                            }
+                                          },
+                                          itemBuilder: (_) => const [
+                                            PopupMenuItem(
+                                              value: 'up',
+                                              child: Text('Move up'),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'down',
+                                              child: Text('Move down'),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'move',
+                                              child: Text('Move to workspace'),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'duplicate',
+                                              child: Text('Duplicate'),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'rename',
+                                              child: Text('Rename'),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'delete',
+                                              child: Text('Delete'),
+                                            ),
+                                          ],
+                                          icon: const Icon(
+                                            Icons.more_horiz,
+                                            size: 18,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
-                    ],
-                  ),
-                  const Divider(),
-                  Row(
-                    children: [
-                      Text(
-                        'Saved requests',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const Spacer(),
-                      FilledButton.icon(
-                        onPressed: () {
-                          context.read<RequestWorkflowCubit>().newRequest(
-                            collectionId: state.selectedCollectionId,
-                          );
-                          _select(1);
-                        },
-                        icon: const Icon(Icons.add),
-                        label: const Text('New request'),
-                      ),
-                    ],
-                  ),
-                  if (state.savedRequests.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(20),
-                      child: Center(child: Text('No matching saved requests.')),
-                    ),
-                  for (final request in state.savedRequests)
-                    Card(
-                      child: ListTile(
-                        leading: Text(request.method.name.toUpperCase()),
-                        title: Text(request.name),
-                        subtitle: Text(request.url),
-                        onTap: () {
-                          context.read<RequestWorkflowCubit>().openRequest(
-                            request,
-                          );
-                          _select(1);
-                        },
-                        trailing: Wrap(
+                );
+                final detailsPane = DevRoutePane(
+                  title: selectedCollection?.name ?? 'Getting started',
+                  subtitle: selectedCollection == null
+                      ? 'Create a request now, or select a collection to browse it.'
+                      : '${activeCollectionRequests.length} requests · ${state.folders.where((folder) => folder.collectionId == selectedCollection.id).length} folders',
+                  trailing: selectedCollection == null
+                      ? null
+                      : FilledButton.icon(
+                          onPressed: () {
+                            context.read<RequestWorkflowCubit>().newRequest(
+                              collectionId: selectedCollection.id,
+                            );
+                            _select(1);
+                          },
+                          icon: const Icon(Icons.add_rounded, size: 16),
+                          label: const Text('New request'),
+                        ),
+                  child: selectedCollection == null
+                      ? _workspaceOnboarding()
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            IconButton(
-                              tooltip: 'Move up',
-                              onPressed:
-                                  state.savedRequests.indexOf(request) == 0
-                                  ? null
-                                  : () => cubit.reorderSavedRequest(
-                                      request.id,
-                                      state.savedRequests.indexOf(request) - 1,
+                            DevRouteListHeader(
+                              title: 'Folders',
+                              count: state.folders
+                                  .where(
+                                    (folder) =>
+                                        folder.collectionId ==
+                                        selectedCollection.id,
+                                  )
+                                  .length,
+                              trailing: TextButton.icon(
+                                onPressed: () async {
+                                  final name = await _askName('New folder');
+                                  if (name != null) cubit.addFolder(name);
+                                },
+                                icon: const Icon(
+                                  Icons.create_new_folder_outlined,
+                                  size: 16,
+                                ),
+                                label: const Text('Add folder'),
+                              ),
+                            ),
+                            const Divider(height: 1),
+                            if (state.folders
+                                .where(
+                                  (folder) =>
+                                      folder.collectionId ==
+                                      selectedCollection.id,
+                                )
+                                .isNotEmpty)
+                              SizedBox(
+                                height: 36,
+                                child: ListView(
+                                  scrollDirection: Axis.horizontal,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  children: [
+                                    for (final folder in state.folders.where(
+                                      (folder) =>
+                                          folder.collectionId ==
+                                          selectedCollection.id,
+                                    ))
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          right: 4,
+                                        ),
+                                        child: OutlinedButton.icon(
+                                          onPressed: () =>
+                                              _folderActions(folder),
+                                          icon: Icon(
+                                            folder.parentFolderId == null
+                                                ? Icons.folder_outlined
+                                                : Icons
+                                                      .subdirectory_arrow_right,
+                                            size: 15,
+                                          ),
+                                          label: Text(folder.name),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            DevRouteListHeader(
+                              title: 'Requests',
+                              count: activeCollectionRequests.length,
+                            ),
+                            const Divider(height: 1),
+                            Expanded(
+                              child: activeCollectionRequests.isEmpty
+                                  ? DevRouteEmptyState(
+                                      icon: Icons.send_outlined,
+                                      title: 'No saved requests',
+                                      message:
+                                          'Create a request here; drafts remain in the editor until you save them.',
+                                      action: OutlinedButton.icon(
+                                        onPressed: () {
+                                          context
+                                              .read<RequestWorkflowCubit>()
+                                              .newRequest(
+                                                collectionId:
+                                                    selectedCollection.id,
+                                              );
+                                          _select(1);
+                                        },
+                                        icon: const Icon(
+                                          Icons.add_rounded,
+                                          size: 17,
+                                        ),
+                                        label: const Text('New request'),
+                                      ),
+                                    )
+                                  : ListView.separated(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 4,
+                                      ),
+                                      itemCount:
+                                          activeCollectionRequests.length,
+                                      separatorBuilder: (_, _) => const Divider(
+                                        height: 1,
+                                        indent: 10,
+                                        endIndent: 10,
+                                      ),
+                                      itemBuilder: (context, index) {
+                                        final request =
+                                            activeCollectionRequests[index];
+                                        return ListTile(
+                                          leading: _HttpMethodBadge(
+                                            method: request.method.name,
+                                          ),
+                                          title: Text(request.name),
+                                          subtitle: Text(
+                                            request.url,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          onTap: () {
+                                            context
+                                                .read<RequestWorkflowCubit>()
+                                                .openRequest(request);
+                                            _select(1);
+                                          },
+                                          trailing: PopupMenuButton<String>(
+                                            tooltip: 'Request actions',
+                                            onSelected: (action) async {
+                                              switch (action) {
+                                                case 'up':
+                                                  if (index > 0) {
+                                                    cubit.reorderSavedRequest(
+                                                      request.id,
+                                                      index - 1,
+                                                    );
+                                                  }
+                                                case 'down':
+                                                  if (index <
+                                                      activeCollectionRequests
+                                                              .length -
+                                                          1) {
+                                                    cubit.reorderSavedRequest(
+                                                      request.id,
+                                                      index + 1,
+                                                    );
+                                                  }
+                                                case 'duplicate':
+                                                  cubit.duplicateSavedRequest(
+                                                    request.id,
+                                                  );
+                                                case 'delete':
+                                                  if (await _confirm(
+                                                    'Delete request?',
+                                                    'The saved request, draft, and its secret references will be removed.',
+                                                  )) {
+                                                    cubit.removeSavedRequest(
+                                                      request.id,
+                                                    );
+                                                  }
+                                              }
+                                            },
+                                            itemBuilder: (_) => const [
+                                              PopupMenuItem(
+                                                value: 'up',
+                                                child: Text('Move up'),
+                                              ),
+                                              PopupMenuItem(
+                                                value: 'down',
+                                                child: Text('Move down'),
+                                              ),
+                                              PopupMenuItem(
+                                                value: 'duplicate',
+                                                child: Text('Duplicate'),
+                                              ),
+                                              PopupMenuItem(
+                                                value: 'delete',
+                                                child: Text('Delete'),
+                                              ),
+                                            ],
+                                            icon: const Icon(
+                                              Icons.more_horiz,
+                                              size: 18,
+                                            ),
+                                          ),
+                                        );
+                                      },
                                     ),
-                              icon: const Icon(Icons.arrow_upward),
-                            ),
-                            IconButton(
-                              tooltip: 'Move down',
-                              onPressed:
-                                  state.savedRequests.indexOf(request) ==
-                                      state.savedRequests.length - 1
-                                  ? null
-                                  : () => cubit.reorderSavedRequest(
-                                      request.id,
-                                      state.savedRequests.indexOf(request) + 1,
-                                    ),
-                              icon: const Icon(Icons.arrow_downward),
-                            ),
-                            IconButton(
-                              tooltip: 'Duplicate',
-                              onPressed: () =>
-                                  cubit.duplicateSavedRequest(request.id),
-                              icon: const Icon(Icons.copy_outlined),
-                            ),
-                            IconButton(
-                              tooltip: 'Delete',
-                              onPressed: () async {
-                                if (await _confirm(
-                                  'Delete request?',
-                                  'The saved request, draft, and its secret references will be removed.',
-                                )) {
-                                  cubit.removeSavedRequest(request.id);
-                                }
-                              },
-                              icon: const Icon(Icons.delete_outline),
                             ),
                           ],
                         ),
-                      ),
-                    ),
-                ],
-              ],
+                );
+                if (compact) {
+                  // At compact desktop and phone heights, showing two stacked
+                  // panels leaves neither usable.  Keep the immediate task in
+                  // focus: choose a collection first, then inspect it.
+                  return Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: selectedCollection == null
+                        ? collectionsPane
+                        : detailsPane,
+                  );
+                }
+                return Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(flex: 5, child: collectionsPane),
+                      const SizedBox(width: 10),
+                      Expanded(flex: 7, child: detailsPane),
+                    ],
+                  ),
+                );
+              },
             ),
           ),
         ],
       );
     },
+  );
+
+  Widget _workspaceOnboarding() => Padding(
+    padding: const EdgeInsets.all(20),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Your API work starts here',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Create a request to explore an endpoint immediately, or create a collection first to keep service work together.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 18),
+        FilledButton.icon(
+          onPressed: _newRequest,
+          icon: const Icon(Icons.add_rounded, size: 17),
+          label: const Text('Create REST request'),
+        ),
+        const SizedBox(height: 20),
+        const Divider(height: 1),
+        const SizedBox(height: 14),
+        _onboardingStep('1', 'Choose an environment before using variables.'),
+        _onboardingStep(
+          '2',
+          'Compose a request and inspect the response in place.',
+        ),
+        _onboardingStep('3', 'Save repeatable work in a collection.'),
+      ],
+    ),
+  );
+
+  Widget _onboardingStep(String number, String message) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 19,
+          height: 19,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.primary.withValues(alpha: .16),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(number, style: Theme.of(context).textTheme.labelSmall),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(message, style: Theme.of(context).textTheme.bodySmall),
+        ),
+      ],
+    ),
   );
 
   Widget _request() => BlocConsumer<RequestWorkflowCubit, RequestWorkflowState>(
@@ -720,201 +1204,282 @@ class _AppShellState extends State<AppShell> {
           selection: TextSelection.collapsed(offset: state.request.url.length),
         );
       }
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            height: 42,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (var i = 0; i < state.tabs.length; i++)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: InputChip(
-                      selected: i == state.activeIndex,
-                      label: Text(
-                        '${state.tabs[i].name}${state.dirtyIds.contains(state.tabs[i].id) ? ' *' : ''}',
-                      ),
-                      onPressed: () => cubit.selectTab(i),
-                      onDeleted: state.tabs.length == 1 && !state.isDirty
-                          ? null
-                          : () => _closeRequestTab(),
-                    ),
-                  ),
-                IconButton(
-                  tooltip: 'New request tab',
-                  onPressed: () => cubit.newRequest(
-                    collectionId: workspace.selectedCollectionId,
-                  ),
-                  icon: const Icon(Icons.add),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          // A 720px-tall Windows window still has enough vertical room for a
+          // compact response pane.  Treating it as phone-like hid the result
+          // surface and left a misleading empty canvas.
+          final compact =
+              constraints.maxWidth < 620 || constraints.maxHeight < 520;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(
-                width: 260,
-                child: TextFormField(
-                  key: ValueKey('${state.request.id}-name'),
-                  initialValue: state.request.name,
-                  onChanged: cubit.updateName,
-                  decoration: const InputDecoration(
-                    labelText: 'Request name',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              DropdownButton<String?>(
-                value: state.request.collectionId,
-                hint: const Text('Collection'),
-                items: <DropdownMenuItem<String?>>[
-                  const DropdownMenuItem(
-                    value: null,
-                    child: Text('No collection'),
-                  ),
-                  ...workspace.collections.map(
-                    (item) => DropdownMenuItem(
-                      value: item.id,
-                      child: Text(item.name),
-                    ),
-                  ),
-                ],
-                onChanged: (value) => cubit.assignLocation(value, null),
-              ),
-              DropdownButton<String?>(
-                value: state.request.folderId,
-                hint: const Text('Folder'),
-                items: <DropdownMenuItem<String?>>[
-                  const DropdownMenuItem(value: null, child: Text('No folder')),
-                  ...workspace.folders.map(
-                    (item) => DropdownMenuItem(
-                      value: item.id,
-                      child: Text(item.name),
-                    ),
-                  ),
-                ],
-                onChanged: state.request.collectionId == null
-                    ? null
-                    : (value) => cubit.assignLocation(
-                        state.request.collectionId,
-                        value,
-                      ),
-              ),
-              TextButton.icon(
-                onPressed: sendingActiveRequest ? null : cubit.save,
-                icon: const Icon(Icons.save_outlined),
-                label: const Text('Save'),
-              ),
-              TextButton.icon(
-                onPressed: _closeRequestTab,
-                icon: const Icon(Icons.close),
-                label: const Text('Close'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final compact = constraints.maxWidth < 620;
-              final method = DropdownButton<HttpMethod>(
-                value: state.request.method,
-                items: HttpMethod.values
+              DevRouteTabStrip(
+                tabs: state.tabs
                     .map(
-                      (item) => DropdownMenuItem(
-                        value: item,
-                        child: Text(item.name.toUpperCase()),
+                      (item) => DevRouteWorkbenchTab(
+                        label: item.name,
+                        dirty: state.dirtyIds.contains(item.id),
                       ),
                     )
                     .toList(),
-                onChanged: sendingActiveRequest
+                activeIndex: state.activeIndex,
+                onSelected: cubit.selectTab,
+                onClose: state.tabs.length == 1 && !state.isDirty
                     ? null
-                    : (value) => cubit.updateMethod(value!),
-              );
-              final url = TextField(
-                controller: _urlController,
-                enabled: !sendingActiveRequest,
-                onChanged: cubit.updateUrl,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  hintText: 'https://api.example.com/resource',
+                    : (_) => _closeRequestTab(),
+                onNew: () => cubit.newRequest(
+                  collectionId: workspace.selectedCollectionId,
                 ),
-              );
-              final send = FilledButton.icon(
-                onPressed: sendingActiveRequest
-                    ? cubit.cancel
-                    : () => _sendWithSafety(cubit, state, workspace),
-                icon: Icon(
-                  sendingActiveRequest
-                      ? Icons.stop_circle_outlined
-                      : Icons.send_rounded,
-                ),
-                label: Text(sendingActiveRequest ? 'Cancel' : 'Send'),
-              );
-              if (compact) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
+              ),
+              const Divider(height: 1),
+              _requestIdentityBar(
+                state,
+                cubit,
+                workspace,
+                savingDisabled: sendingActiveRequest,
+              ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 620;
+                    final method = Container(
+                      height: 38,
+                      padding: const EdgeInsets.only(left: 9, right: 5),
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: .11),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<HttpMethod>(
+                          value: state.request.method,
+                          isDense: true,
+                          items: HttpMethod.values
+                              .map(
+                                (item) => DropdownMenuItem(
+                                  value: item,
+                                  child: Text(
+                                    item.name.toUpperCase(),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge
+                                        ?.copyWith(
+                                          color: _httpMethodColor(item.name),
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: sendingActiveRequest
+                              ? null
+                              : (value) => cubit.updateMethod(value!),
+                        ),
+                      ),
+                    );
+                    final url = TextField(
+                      controller: _urlController,
+                      enabled: !sendingActiveRequest,
+                      onChanged: cubit.updateUrl,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.link_rounded, size: 17),
+                        hintText: 'https://api.example.com/resource',
+                      ),
+                    );
+                    final send = FilledButton.icon(
+                      onPressed: sendingActiveRequest
+                          ? cubit.cancel
+                          : () => _sendWithSafety(cubit, state, workspace),
+                      icon: Icon(
+                        sendingActiveRequest
+                            ? Icons.stop_circle_outlined
+                            : Icons.send_rounded,
+                        size: 17,
+                      ),
+                      label: Text(sendingActiveRequest ? 'Cancel' : 'Send'),
+                    );
+                    if (compact) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [method, const SizedBox(width: 8), send],
+                          ),
+                          const SizedBox(height: 8),
+                          url,
+                        ],
+                      );
+                    }
+                    return Row(
                       children: [
-                        Expanded(child: method),
-                        const SizedBox(width: 10),
+                        method,
+                        const SizedBox(width: 8),
+                        Expanded(child: url),
+                        const SizedBox(width: 8),
                         send,
                       ],
-                    ),
-                    const SizedBox(height: 8),
-                    url,
-                  ],
-                );
-              }
-              return Row(
-                children: [
-                  method,
-                  const SizedBox(width: 10),
-                  Expanded(child: url),
-                  const SizedBox(width: 10),
-                  send,
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 8),
-          _requestEditor(state, cubit, workspace),
-          const SizedBox(height: 8),
-          Expanded(
-            child: state.response == null
-                ? const Card(
-                    child: Center(
-                      child: Text(
-                        'Configure and send a request. Drafts autosave locally.',
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 2),
+              _requestEditor(state, cubit, workspace, compact),
+              DevRouteSplitter(
+                axis: Axis.vertical,
+                onDrag: _changeRequestEditorHeight,
+                onReset: _resetRequestEditorHeight,
+              ),
+              const SizedBox(height: 2),
+              Expanded(
+                child: state.response == null && compact
+                    ? const SizedBox.shrink()
+                    : state.response == null
+                    ? DevRoutePane(
+                        title: 'Response',
+                        subtitle: 'No response yet',
+                        child: DevRouteEmptyState(
+                          icon: Icons.http_outlined,
+                          title: 'Ready to send',
+                          message:
+                              'Configure the request and press Send. Drafts autosave locally.',
+                        ),
+                      )
+                    : DevRoutePane(
+                        title: 'Response',
+                        subtitle:
+                            state.response!.error ??
+                            '${state.response!.statusCode} · ${state.response!.durationMs} ms · ${state.response!.sizeBytes} B',
+                        child: _response(
+                          state.request,
+                          state.response!,
+                          state.sensitiveValues[state.request.id] ??
+                              const <String>{},
+                        ),
                       ),
-                    ),
-                  )
-                : _response(
-                    state.request,
-                    state.response!,
-                    state.sensitiveValues[state.request.id] ?? const <String>{},
-                  ),
-          ),
-        ],
+              ),
+            ],
+          );
+        },
       );
     },
   );
+
+  Widget _requestIdentityBar(
+    RequestWorkflowState state,
+    RequestWorkflowCubit cubit,
+    WorkspaceState workspace, {
+    required bool savingDisabled,
+  }) {
+    final name = SizedBox(
+      width: 240,
+      child: TextFormField(
+        key: ValueKey('${state.request.id}-name'),
+        initialValue: state.request.name,
+        onChanged: cubit.updateName,
+        style: Theme.of(
+          context,
+        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        decoration: const InputDecoration(
+          hintText: 'Request name',
+          filled: false,
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        ),
+      ),
+    );
+    final collection = SizedBox(
+      width: 138,
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          isDense: true,
+          isExpanded: true,
+          value: state.request.collectionId,
+          hint: const Text('Collection'),
+          items: <DropdownMenuItem<String?>>[
+            const DropdownMenuItem(value: null, child: Text('No collection')),
+            ...workspace.collections.map(
+              (item) => DropdownMenuItem(
+                value: item.id,
+                child: Text(item.name, overflow: TextOverflow.ellipsis),
+              ),
+            ),
+          ],
+          onChanged: (value) => cubit.assignLocation(value, null),
+        ),
+      ),
+    );
+    final folder = SizedBox(
+      width: 118,
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          isDense: true,
+          isExpanded: true,
+          value: state.request.folderId,
+          hint: const Text('Folder'),
+          items: <DropdownMenuItem<String?>>[
+            const DropdownMenuItem(value: null, child: Text('No folder')),
+            ...workspace.folders.map(
+              (item) => DropdownMenuItem(
+                value: item.id,
+                child: Text(item.name, overflow: TextOverflow.ellipsis),
+              ),
+            ),
+          ],
+          onChanged: state.request.collectionId == null
+              ? null
+              : (value) =>
+                    cubit.assignLocation(state.request.collectionId, value),
+        ),
+      ),
+    );
+    final save = IconButton(
+      tooltip: 'Save request',
+      onPressed: savingDisabled ? null : cubit.save,
+      icon: const Icon(Icons.save_outlined, size: 18),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 780;
+        return DevRoutePageBar(
+          compact: compact,
+          eyebrow: state.isDirty ? 'REST · unsaved draft' : 'REST request',
+          title: name,
+          detail: savingDisabled
+              ? 'Request in flight'
+              : 'Draft saved locally until you save it',
+          trailing: compact
+              ? save
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    collection,
+                    const SizedBox(width: 8),
+                    folder,
+                    const SizedBox(width: 4),
+                    save,
+                  ],
+                ),
+        );
+      },
+    );
+  }
 
   Widget _requestEditor(
     RequestWorkflowState state,
     RequestWorkflowCubit cubit,
     WorkspaceState workspace,
-  ) => DefaultTabController(
-    length: 6,
-    child: Card(
-      child: SizedBox(
-        height: 250,
+    bool compact,
+  ) => SizedBox(
+    height: compact ? 180 : _requestEditorHeight,
+    child: DefaultTabController(
+      length: 6,
+      child: DevRoutePane(
         child: Column(
           children: [
             const TabBar(
@@ -1016,30 +1581,99 @@ class _AppShellState extends State<AppShell> {
     required VoidCallback onAdd,
     required void Function(int) onRemove,
     required void Function(int, bool) onToggle,
-  }) => ListView(
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      ListTile(
-        title: Text(title),
+      DevRouteListHeader(
+        title: title,
+        count: items.length,
         trailing: TextButton.icon(
           onPressed: onAdd,
-          icon: const Icon(Icons.add),
+          icon: const Icon(Icons.add_rounded, size: 16),
           label: const Text('Add'),
         ),
       ),
-      for (var i = 0; i < items.length; i++)
-        ListTile(
-          dense: true,
-          leading: Checkbox(
-            value: items[i].$3,
-            onChanged: (value) => onToggle(i, value ?? true),
-          ),
-          title: Text(items[i].$1),
-          subtitle: SelectableText(items[i].$2),
-          trailing: IconButton(
-            onPressed: () => onRemove(i),
-            icon: const Icon(Icons.delete_outline),
-          ),
+      const Divider(height: 1),
+      Container(
+        height: 30,
+        color: Theme.of(
+          context,
+        ).colorScheme.surfaceContainerHighest.withValues(alpha: .35),
+        padding: const EdgeInsets.only(left: 6, right: 8),
+        child: Row(
+          children: [
+            const SizedBox(width: 38),
+            Expanded(
+              flex: 4,
+              child: Text('KEY', style: Theme.of(context).textTheme.labelSmall),
+            ),
+            Expanded(
+              flex: 6,
+              child: Text(
+                'VALUE',
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+            ),
+            const SizedBox(width: 28),
+          ],
         ),
+      ),
+      const Divider(height: 1),
+      Expanded(
+        child: items.isEmpty
+            ? Center(
+                child: Text(
+                  'No $title yet. Use Add to create one.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+              )
+            : ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                itemCount: items.length,
+                separatorBuilder: (_, _) =>
+                    const Divider(height: 1, indent: 8, endIndent: 8),
+                itemBuilder: (context, index) => SizedBox(
+                  height: 38,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 6, right: 4),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 38,
+                          child: Checkbox(
+                            value: items[index].$3,
+                            onChanged: (value) =>
+                                onToggle(index, value ?? true),
+                          ),
+                        ),
+                        Expanded(
+                          flex: 4,
+                          child: Text(
+                            items[index].$1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                        Expanded(
+                          flex: 6,
+                          child: SelectableText(
+                            items[index].$2,
+                            maxLines: 1,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Remove $title value',
+                          onPressed: () => onRemove(index),
+                          icon: const Icon(Icons.close, size: 16),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+      ),
     ],
   );
 
@@ -1274,166 +1908,160 @@ class _AppShellState extends State<AppShell> {
               .join('\n');
     return DefaultTabController(
       length: 5,
-      child: Card(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Text(
-                    response.error ??
-                        '${response.statusCode ?? '—'} ${response.statusMessage ?? ''}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  Text(
-                    '${response.durationMs} ms • ${response.sizeBytes} bytes${response.isTruncated ? ' • preview truncated' : ''}',
-                  ),
-                  IconButton(
-                    tooltip: 'Safe copy',
-                    onPressed: () => _copySafe(response.body, sensitiveValues),
-                    icon: const Icon(Icons.copy_outlined),
-                  ),
-                  IconButton(
-                    tooltip: 'Export sanitized response',
-                    onPressed: () => _exportResponse(response, sensitiveValues),
-                    icon: const Icon(Icons.download_outlined),
-                  ),
-                  if (candidates.isNotEmpty)
-                    TextButton.icon(
-                      onPressed: () => _saveToken(response.body),
-                      icon: const Icon(Icons.key_outlined),
-                      label: const Text('Save token…'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 2),
+            child: Row(
+              children: [
+                if (response.isTruncated)
+                  Expanded(
+                    child: Text(
+                      'Preview truncated to protect memory',
+                      style: Theme.of(context).textTheme.labelSmall,
                     ),
-                ],
-              ),
-            ),
-            const TabBar(
-              isScrollable: true,
-              tabs: [
-                Tab(text: 'Body'),
-                Tab(text: 'Headers'),
-                Tab(text: 'Cookies'),
-                Tab(text: 'Timeline'),
-                Tab(text: 'Diagnostics'),
+                  )
+                else
+                  const Spacer(),
+                IconButton(
+                  tooltip: 'Safe copy',
+                  onPressed: () => _copySafe(response.body, sensitiveValues),
+                  icon: const Icon(Icons.copy_outlined),
+                ),
+                IconButton(
+                  tooltip: 'Export sanitized response',
+                  onPressed: () => _exportResponse(response, sensitiveValues),
+                  icon: const Icon(Icons.download_outlined),
+                ),
+                if (candidates.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () => _saveToken(response.body),
+                    icon: const Icon(Icons.key_outlined, size: 17),
+                    label: const Text('Save token…'),
+                  ),
               ],
             ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                onChanged: (value) =>
-                                    setState(() => _responseSearch = value),
-                                decoration: const InputDecoration(
-                                  prefixIcon: Icon(Icons.search),
-                                  hintText: 'Search response',
-                                  border: OutlineInputBorder(),
-                                ),
+          ),
+          const TabBar(
+            isScrollable: true,
+            tabs: [
+              Tab(text: 'Body'),
+              Tab(text: 'Headers'),
+              Tab(text: 'Cookies'),
+              Tab(text: 'Timeline'),
+              Tab(text: 'Diagnostics'),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              onChanged: (value) =>
+                                  setState(() => _responseSearch = value),
+                              decoration: const InputDecoration(
+                                prefixIcon: Icon(Icons.search),
+                                hintText: 'Search response',
+                                border: OutlineInputBorder(),
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            SegmentedButton<bool>(
-                              segments: const [
-                                ButtonSegment(
-                                  value: false,
-                                  label: Text('Pretty'),
-                                ),
-                                ButtonSegment(value: true, label: Text('Raw')),
-                              ],
-                              selected: <bool>{_rawResponse},
-                              onSelectionChanged: (value) =>
-                                  setState(() => _rawResponse = value.first),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.all(12),
-                          child: SelectableText(response.error ?? filteredBody),
-                        ),
-                      ),
-                    ],
-                  ),
-                  ListView(
-                    children: response.headers.entries
-                        .map(
-                          (item) => ListTile(
-                            title: Text(item.key),
-                            subtitle: SelectableText(item.value),
                           ),
-                        )
-                        .toList(),
-                  ),
-                  ListView(
-                    children: response.cookies.isEmpty
-                        ? const [ListTile(title: Text('No response cookies.'))]
-                        : response.cookies
-                              .map(
-                                (_) => const ListTile(
-                                  title: Text('[REDACTED COOKIE]'),
-                                ),
-                              )
-                              .toList(),
-                  ),
-                  ListView(
-                    children: [
-                      ListTile(
-                        title: const Text('Started'),
-                        subtitle: Text(response.timestamp.toLocal().toString()),
-                      ),
-                      ListTile(
-                        title: const Text('Completed'),
-                        subtitle: Text('${response.durationMs} ms'),
-                      ),
-                      ListTile(
-                        title: const Text('Payload size'),
-                        subtitle: Text('${response.sizeBytes} bytes'),
-                      ),
-                      if (response.isTruncated)
-                        const ListTile(
-                          title: Text('Preview bounded'),
-                          subtitle: Text(
-                            'The displayed body was truncated to protect memory.',
+                          const SizedBox(width: 8),
+                          SegmentedButton<bool>(
+                            segments: const [
+                              ButtonSegment(
+                                value: false,
+                                label: Text('Pretty'),
+                              ),
+                              ButtonSegment(value: true, label: Text('Raw')),
+                            ],
+                            selected: <bool>{_rawResponse},
+                            onSelectionChanged: (value) =>
+                                setState(() => _rawResponse = value.first),
                           ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(12),
+                        child: SelectableText(response.error ?? filteredBody),
+                      ),
+                    ),
+                  ],
+                ),
+                ListView(
+                  children: response.headers.entries
+                      .map(
+                        (item) => ListTile(
+                          title: Text(item.key),
+                          subtitle: SelectableText(item.value),
                         ),
-                    ],
-                  ),
-                  ListView(
-                    children: diagnostics.isEmpty
-                        ? const [ListTile(title: Text('No diagnostics.'))]
-                        : diagnostics
-                              .map(
-                                (item) => ListTile(
-                                  leading: Icon(
-                                    item.kind == DiagnosticKind.observed
-                                        ? Icons.fact_check_outlined
-                                        : Icons.lightbulb_outline,
-                                  ),
-                                  title: Text(
-                                    '${item.kind.name}: ${item.title}',
-                                  ),
-                                  subtitle: Text(item.detail),
+                      )
+                      .toList(),
+                ),
+                ListView(
+                  children: response.cookies.isEmpty
+                      ? const [ListTile(title: Text('No response cookies.'))]
+                      : response.cookies
+                            .map(
+                              (_) => const ListTile(
+                                title: Text('[REDACTED COOKIE]'),
+                              ),
+                            )
+                            .toList(),
+                ),
+                ListView(
+                  children: [
+                    ListTile(
+                      title: const Text('Started'),
+                      subtitle: Text(response.timestamp.toLocal().toString()),
+                    ),
+                    ListTile(
+                      title: const Text('Completed'),
+                      subtitle: Text('${response.durationMs} ms'),
+                    ),
+                    ListTile(
+                      title: const Text('Payload size'),
+                      subtitle: Text('${response.sizeBytes} bytes'),
+                    ),
+                    if (response.isTruncated)
+                      const ListTile(
+                        title: Text('Preview bounded'),
+                        subtitle: Text(
+                          'The displayed body was truncated to protect memory.',
+                        ),
+                      ),
+                  ],
+                ),
+                ListView(
+                  children: diagnostics.isEmpty
+                      ? const [ListTile(title: Text('No diagnostics.'))]
+                      : diagnostics
+                            .map(
+                              (item) => ListTile(
+                                leading: Icon(
+                                  item.kind == DiagnosticKind.observed
+                                      ? Icons.fact_check_outlined
+                                      : Icons.lightbulb_outline,
                                 ),
-                              )
-                              .toList(),
-                  ),
-                ],
-              ),
+                                title: Text('${item.kind.name}: ${item.title}'),
+                                subtitle: Text(item.detail),
+                              ),
+                            )
+                            .toList(),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1450,129 +2078,164 @@ class _AppShellState extends State<AppShell> {
           )
           .toList();
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                'History',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              SizedBox(
-                width: 280,
-                child: TextField(
-                  onChanged: cubit.search,
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search),
-                    hintText: 'Search history',
-                    border: OutlineInputBorder(),
-                  ),
+          DevRoutePageBar(
+            eyebrow: 'History',
+            title: const Text('Request activity'),
+            detail: '${state.history.length} locally retained records',
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton.icon(
+                  onPressed: state.history.isEmpty
+                      ? null
+                      : () async {
+                          if (await _confirm(
+                            'Clear all history?',
+                            'This cannot be undone.',
+                          )) {
+                            cubit.clearAllHistory();
+                          }
+                        },
+                  icon: const Icon(Icons.delete_sweep_outlined, size: 17),
+                  label: const Text('Clear'),
                 ),
-              ),
-              DropdownButton<String?>(
-                value: _historyMethod,
-                hint: const Text('Any method'),
-                items: <DropdownMenuItem<String?>>[
-                  const DropdownMenuItem(
-                    value: null,
-                    child: Text('Any method'),
-                  ),
-                  ...HttpMethod.values.map(
-                    (item) => DropdownMenuItem(
-                      value: item.name,
-                      child: Text(item.name.toUpperCase()),
+                const SizedBox(width: 4),
+                FilledButton.tonalIcon(
+                  onPressed: _restComparison.length == 2
+                      ? () => _compareRestHistory(
+                          filtered
+                              .where(
+                                (item) => _restComparison.contains(item.id),
+                              )
+                              .toList(),
+                        )
+                      : null,
+                  icon: const Icon(Icons.compare_arrows, size: 17),
+                  label: const Text('Compare'),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(
+                  width: 300,
+                  child: TextField(
+                    onChanged: cubit.search,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search_rounded, size: 18),
+                      hintText: 'Filter request activity',
                     ),
                   ),
-                ],
-                onChanged: (value) => setState(() => _historyMethod = value),
-              ),
-              DropdownButton<int?>(
-                value: _historyMinimumStatus,
-                hint: const Text('Any status'),
-                items: const [
-                  DropdownMenuItem(value: null, child: Text('Any status')),
-                  DropdownMenuItem(value: 400, child: Text('Errors ≥400')),
-                  DropdownMenuItem(value: 500, child: Text('Server ≥500')),
-                ],
-                onChanged: (value) =>
-                    setState(() => _historyMinimumStatus = value),
-              ),
-              TextButton.icon(
-                onPressed: state.history.isEmpty
-                    ? null
-                    : () async {
-                        if (await _confirm(
-                          'Clear all history?',
-                          'This cannot be undone.',
-                        )) {
-                          cubit.clearAllHistory();
-                        }
-                      },
-                icon: const Icon(Icons.delete_sweep_outlined),
-                label: const Text('Clear all'),
-              ),
-              FilledButton.tonalIcon(
-                onPressed: _restComparison.length == 2
-                    ? () => _compareRestHistory(
-                        filtered
-                            .where((item) => _restComparison.contains(item.id))
-                            .toList(),
-                      )
-                    : null,
-                icon: const Icon(Icons.compare_arrows),
-                label: const Text('Compare selected'),
-              ),
-            ],
+                ),
+                DropdownButton<String?>(
+                  value: _historyMethod,
+                  hint: const Text('All methods'),
+                  items: <DropdownMenuItem<String?>>[
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text('All methods'),
+                    ),
+                    ...HttpMethod.values.map(
+                      (item) => DropdownMenuItem(
+                        value: item.name,
+                        child: Text(item.name.toUpperCase()),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) => setState(() => _historyMethod = value),
+                ),
+                DropdownButton<int?>(
+                  value: _historyMinimumStatus,
+                  hint: const Text('All outcomes'),
+                  items: const [
+                    DropdownMenuItem(value: null, child: Text('All outcomes')),
+                    DropdownMenuItem(value: 400, child: Text('Errors ≥400')),
+                    DropdownMenuItem(value: 500, child: Text('Server ≥500')),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => _historyMinimumStatus = value),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
+          const Divider(height: 1),
           Expanded(
-            child: filtered.isEmpty
-                ? const Center(child: Text('No matching history records.'))
-                : ListView.builder(
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final item = filtered[index];
-                      return Card(
-                        child: ListTile(
-                          leading: Checkbox(
-                            value: _restComparison.contains(item.id),
-                            onChanged: (selected) => setState(() {
-                              if (selected == true &&
-                                  _restComparison.length < 2) {
-                                _restComparison.add(item.id);
-                              } else {
-                                _restComparison.remove(item.id);
-                              }
-                            }),
-                          ),
-                          title: Text(
-                            '${item.method.toUpperCase()} ${item.url}',
-                          ),
-                          subtitle: Text(
-                            '${item.status ?? 'Error'} • ${item.durationMs} ms • ${item.createdAt.toLocal()}',
-                          ),
-                          onTap: () => _showHistory(item),
-                          trailing: Wrap(
-                            children: [
-                              IconButton(
-                                tooltip: 'Replay as new draft',
-                                onPressed: () => _replayHistory(item.id),
-                                icon: const Icon(Icons.replay_outlined),
-                              ),
-                              IconButton(
-                                tooltip: 'Delete',
-                                onPressed: () => cubit.removeHistory(item.id),
-                                icon: const Icon(Icons.delete_outline),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: DevRoutePane(
+                title: 'Activity',
+                subtitle: '${filtered.length} matching records',
+                child: filtered.isEmpty
+                    ? const DevRouteEmptyState(
+                        icon: Icons.history_outlined,
+                        title: 'No matching activity',
+                        message:
+                            'Sent requests appear here with their outcome and duration.',
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, _) =>
+                            const Divider(height: 1, indent: 10, endIndent: 10),
+                        itemBuilder: (context, index) {
+                          final item = filtered[index];
+                          return ListTile(
+                            leading: Checkbox(
+                              value: _restComparison.contains(item.id),
+                              onChanged: (selected) => setState(() {
+                                if (selected == true &&
+                                    _restComparison.length < 2) {
+                                  _restComparison.add(item.id);
+                                } else {
+                                  _restComparison.remove(item.id);
+                                }
+                              }),
+                            ),
+                            title: Row(
+                              children: [
+                                _HttpMethodBadge(method: item.method),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    item.url,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            subtitle: Text(
+                              '${item.status ?? 'Error'} · ${item.durationMs} ms · ${item.createdAt.toLocal()}',
+                            ),
+                            onTap: () => _showHistory(item),
+                            trailing: Wrap(
+                              children: [
+                                IconButton(
+                                  tooltip: 'Replay as new draft',
+                                  onPressed: () => _replayHistory(item.id),
+                                  icon: const Icon(Icons.replay_outlined),
+                                ),
+                                IconButton(
+                                  tooltip: 'Delete',
+                                  onPressed: () => cubit.removeHistory(item.id),
+                                  icon: const Icon(Icons.delete_outline),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ),
           ),
         ],
       );
@@ -1583,30 +2246,24 @@ class _AppShellState extends State<AppShell> {
     builder: (context, state) {
       final cubit = context.read<WorkspaceCubit>();
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                'Environments',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              FilledButton.icon(
-                onPressed: () async {
-                  final name = await _askName('New environment');
-                  if (name != null) {
-                    cubit.addEnvironment(name, EnvironmentKind.custom);
-                  }
-                },
-                icon: const Icon(Icons.add),
-                label: const Text('New'),
-              ),
-            ],
+          DevRoutePageBar(
+            eyebrow: 'Environments',
+            title: const Text('Variables and secrets'),
+            detail: '${state.environments.length} environments',
+            trailing: FilledButton.icon(
+              onPressed: () async {
+                final name = await _askName('New environment');
+                if (name != null) {
+                  cubit.addEnvironment(name, EnvironmentKind.custom);
+                }
+              },
+              icon: const Icon(Icons.add_rounded, size: 17),
+              label: const Text('New'),
+            ),
           ),
-          const SizedBox(height: 8),
+          const Divider(height: 1),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -1618,161 +2275,202 @@ class _AppShellState extends State<AppShell> {
                     SizedBox(
                       width: compact ? null : 300,
                       height: compact ? 210 : null,
-                      child: ListView(
-                        children: [
-                          for (final item in state.environments)
-                            Card(
-                              child: ListTile(
-                                selected:
-                                    item.id == state.selectedEnvironmentId,
-                                leading: Icon(
-                                  item.isActive
-                                      ? Icons.radio_button_checked
-                                      : Icons.radio_button_unchecked,
-                                ),
-                                title: Text(item.name),
-                                subtitle: Text(item.kind.name),
+                      child: DevRoutePane(
+                        title: 'Environments',
+                        subtitle: 'Active scope and reusable values',
+                        trailing: IconButton(
+                          tooltip: 'New environment',
+                          onPressed: () async {
+                            final name = await _askName('New environment');
+                            if (name != null) {
+                              cubit.addEnvironment(
+                                name,
+                                EnvironmentKind.custom,
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.add, size: 18),
+                        ),
+                        child: ListView.builder(
+                          itemCount: state.environments.length,
+                          itemBuilder: (context, index) {
+                            final item = state.environments[index];
+                            final selected =
+                                item.id == state.selectedEnvironmentId;
+                            final colors = Theme.of(context).colorScheme;
+                            return Material(
+                              color: selected
+                                  ? colors.primary.withValues(alpha: .11)
+                                  : Colors.transparent,
+                              child: InkWell(
                                 onTap: () => cubit.selectEnvironment(item.id),
-                                trailing: PopupMenuButton<String>(
-                                  onSelected: (action) =>
-                                      _environmentAction(action, item),
-                                  itemBuilder: (_) => const [
-                                    PopupMenuItem(
-                                      value: 'activate',
-                                      child: Text('Activate'),
+                                child: SizedBox(
+                                  height: 54,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: 11,
+                                      right: 4,
                                     ),
-                                    PopupMenuItem(
-                                      value: 'rename',
-                                      child: Text('Rename'),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          item.isActive
+                                              ? Icons.radio_button_checked
+                                              : Icons.radio_button_unchecked,
+                                          size: 16,
+                                          color: item.isActive
+                                              ? colors.primary
+                                              : colors.onSurfaceVariant,
+                                        ),
+                                        const SizedBox(width: 9),
+                                        Expanded(
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                item.name,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .labelLarge
+                                                    ?.copyWith(
+                                                      fontWeight: selected
+                                                          ? FontWeight.w700
+                                                          : FontWeight.w500,
+                                                    ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                item.isActive
+                                                    ? 'ACTIVE · ${item.kind.name.toUpperCase()}'
+                                                    : item.kind.name
+                                                          .toUpperCase(),
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .labelSmall
+                                                    ?.copyWith(
+                                                      color: colors
+                                                          .onSurfaceVariant,
+                                                      letterSpacing: .55,
+                                                    ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuButton<String>(
+                                          tooltip: '${item.name} actions',
+                                          onSelected: (action) =>
+                                              _environmentAction(action, item),
+                                          itemBuilder: (_) => const [
+                                            PopupMenuItem(
+                                              value: 'activate',
+                                              child: Text('Activate'),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'rename',
+                                              child: Text('Rename'),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'duplicate',
+                                              child: Text('Duplicate'),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'delete',
+                                              child: Text('Delete'),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                     ),
-                                    PopupMenuItem(
-                                      value: 'duplicate',
-                                      child: Text('Duplicate'),
-                                    ),
-                                    PopupMenuItem(
-                                      value: 'delete',
-                                      child: Text('Delete'),
-                                    ),
-                                  ],
+                                  ),
                                 ),
                               ),
-                            ),
-                        ],
+                            );
+                          },
+                        ),
                       ),
                     ),
                     if (compact) const Divider() else const VerticalDivider(),
                     Expanded(
                       child: state.selectedEnvironmentId == null
-                          ? const Center(child: Text('Select an environment.'))
-                          : Column(
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      'Variables',
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.titleLarge,
-                                    ),
-                                    const Spacer(),
-                                    FilledButton.icon(
-                                      onPressed: () => _editVariable(),
-                                      icon: const Icon(Icons.add),
-                                      label: const Text('Add'),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Expanded(
-                                  child: ListView(
-                                    children: [
-                                      for (final variable
-                                          in state.environmentVariables)
-                                        Card(
-                                          child: ListTile(
-                                            leading: Checkbox(
-                                              value: variable.enabled,
-                                              onChanged: (value) =>
-                                                  cubit.saveVariable(
-                                                    id: variable.id,
-                                                    key: variable.key,
-                                                    value: variable.value,
-                                                    secret: variable.isSecret,
-                                                    enabled: value ?? true,
-                                                  ),
-                                            ),
-                                            title: Text(variable.key),
-                                            subtitle: Text(
-                                              variable.isSecret
-                                                  ? '[SECURE STORAGE REFERENCE]'
-                                                  : variable.value,
-                                            ),
-                                            onTap: () =>
-                                                _editVariable(variable),
-                                            trailing: Wrap(
-                                              children: [
-                                                IconButton(
-                                                  tooltip: 'Move up',
-                                                  onPressed:
-                                                      state.environmentVariables
-                                                              .indexOf(
-                                                                variable,
-                                                              ) ==
-                                                          0
-                                                      ? null
-                                                      : () => cubit.reorderVariable(
-                                                          variable.id,
-                                                          state.environmentVariables
-                                                                  .indexOf(
-                                                                    variable,
-                                                                  ) -
-                                                              1,
-                                                        ),
-                                                  icon: const Icon(
-                                                    Icons.arrow_upward,
-                                                  ),
-                                                ),
-                                                IconButton(
-                                                  tooltip: 'Move down',
-                                                  onPressed:
-                                                      state.environmentVariables
-                                                              .indexOf(
-                                                                variable,
-                                                              ) ==
-                                                          state
-                                                                  .environmentVariables
-                                                                  .length -
-                                                              1
-                                                      ? null
-                                                      : () => cubit.reorderVariable(
-                                                          variable.id,
-                                                          state.environmentVariables
-                                                                  .indexOf(
-                                                                    variable,
-                                                                  ) +
-                                                              1,
-                                                        ),
-                                                  icon: const Icon(
-                                                    Icons.arrow_downward,
-                                                  ),
-                                                ),
-                                                IconButton(
-                                                  onPressed: () =>
-                                                      cubit.removeVariable(
-                                                        variable.id,
-                                                      ),
-                                                  icon: const Icon(
-                                                    Icons.delete_outline,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
+                          ? const DevRouteEmptyState(
+                              icon: Icons.tune_outlined,
+                              title: 'Select an environment',
+                              message:
+                                  'Choose a scope from the left to edit its reusable values.',
+                            )
+                          : DevRoutePane(
+                              title: 'Variables',
+                              subtitle:
+                                  '${state.environmentVariables.length} values in the active environment',
+                              trailing: FilledButton.icon(
+                                onPressed: () => _editVariable(),
+                                icon: const Icon(Icons.add, size: 17),
+                                label: const Text('Add'),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const _EnvironmentVariableHeader(),
+                                  const Divider(height: 1),
+                                  Expanded(
+                                    child: state.environmentVariables.isEmpty
+                                        ? const DevRouteEmptyState(
+                                            icon: Icons.key_outlined,
+                                            title: 'No variables yet',
+                                            message:
+                                                'Add a value once and reuse it safely across requests.',
+                                          )
+                                        : ListView.builder(
+                                            itemCount: state
+                                                .environmentVariables
+                                                .length,
+                                            itemBuilder: (context, index) {
+                                              final variable = state
+                                                  .environmentVariables[index];
+                                              return _EnvironmentVariableRow(
+                                                variable: variable,
+                                                isFirst: index == 0,
+                                                isLast:
+                                                    index ==
+                                                    state
+                                                            .environmentVariables
+                                                            .length -
+                                                        1,
+                                                onTap: () =>
+                                                    _editVariable(variable),
+                                                onEnabled: (value) =>
+                                                    cubit.saveVariable(
+                                                      id: variable.id,
+                                                      key: variable.key,
+                                                      value: variable.value,
+                                                      secret: variable.isSecret,
+                                                      enabled: value,
+                                                    ),
+                                                onMoveUp: () =>
+                                                    cubit.reorderVariable(
+                                                      variable.id,
+                                                      index - 1,
+                                                    ),
+                                                onMoveDown: () =>
+                                                    cubit.reorderVariable(
+                                                      variable.id,
+                                                      index + 1,
+                                                    ),
+                                                onDelete: () =>
+                                                    cubit.removeVariable(
+                                                      variable.id,
+                                                    ),
+                                              );
+                                            },
                                           ),
-                                        ),
-                                    ],
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                     ),
                   ],
@@ -1789,80 +2487,107 @@ class _AppShellState extends State<AppShell> {
     builder: (context, state) {
       final cubit = context.read<WorkspaceCubit>();
       final settings = state.settings;
-      return ListView(
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'Workspace settings',
-            style: Theme.of(context).textTheme.headlineMedium,
+          const DevRoutePageBar(
+            eyebrow: 'Settings',
+            title: Text('Workspace preferences'),
+            detail: 'History, response handling, and production safeguards',
           ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
+          const Divider(height: 1),
+          Expanded(
+            child: ListView(
               padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _numberField(
-                    'History retention days',
-                    settings.historyRetentionDays,
-                    (value) => cubit.updateSettings(
-                      WorkspaceSettingsModel(
-                        historyRetentionDays: value,
-                        historyMaximumCount: settings.historyMaximumCount,
-                        responsePreviewBytes: settings.responsePreviewBytes,
-                        productionStrictMode: settings.productionStrictMode,
+              children: [
+                _SettingsWorkbenchSection(
+                  title: 'Request history',
+                  subtitle:
+                      'Local retention and the size of the working record.',
+                  children: [
+                    _SettingsNumberRow(
+                      label: 'Retention period',
+                      detail: 'Days to retain a request record locally',
+                      value: settings.historyRetentionDays,
+                      suffix: 'days',
+                      onSubmitted: (value) => cubit.updateSettings(
+                        WorkspaceSettingsModel(
+                          historyRetentionDays: value,
+                          historyMaximumCount: settings.historyMaximumCount,
+                          responsePreviewBytes: settings.responsePreviewBytes,
+                          productionStrictMode: settings.productionStrictMode,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  _numberField(
-                    'Maximum history records',
-                    settings.historyMaximumCount,
-                    (value) => cubit.updateSettings(
-                      WorkspaceSettingsModel(
-                        historyRetentionDays: settings.historyRetentionDays,
-                        historyMaximumCount: value,
-                        responsePreviewBytes: settings.responsePreviewBytes,
-                        productionStrictMode: settings.productionStrictMode,
+                    _SettingsNumberRow(
+                      label: 'Record limit',
+                      detail: 'Maximum request records saved per workspace',
+                      value: settings.historyMaximumCount,
+                      suffix: 'records',
+                      onSubmitted: (value) => cubit.updateSettings(
+                        WorkspaceSettingsModel(
+                          historyRetentionDays: settings.historyRetentionDays,
+                          historyMaximumCount: value,
+                          responsePreviewBytes: settings.responsePreviewBytes,
+                          productionStrictMode: settings.productionStrictMode,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  _numberField(
-                    'Response preview byte limit',
-                    settings.responsePreviewBytes,
-                    (value) => cubit.updateSettings(
-                      WorkspaceSettingsModel(
-                        historyRetentionDays: settings.historyRetentionDays,
-                        historyMaximumCount: settings.historyMaximumCount,
-                        responsePreviewBytes: value,
-                        productionStrictMode: settings.productionStrictMode,
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _SettingsWorkbenchSection(
+                  title: 'Response handling',
+                  subtitle:
+                      'Keep large payloads useful without overloading the workbench.',
+                  children: [
+                    _SettingsNumberRow(
+                      label: 'Response preview limit',
+                      detail:
+                          'Maximum bytes rendered in the response inspector',
+                      value: settings.responsePreviewBytes,
+                      suffix: 'bytes',
+                      onSubmitted: (value) => cubit.updateSettings(
+                        WorkspaceSettingsModel(
+                          historyRetentionDays: settings.historyRetentionDays,
+                          historyMaximumCount: settings.historyMaximumCount,
+                          responsePreviewBytes: value,
+                          productionStrictMode: settings.productionStrictMode,
+                        ),
                       ),
                     ),
-                  ),
-                  SwitchListTile(
-                    title: const Text('Strict production confirmation'),
-                    subtitle: const Text(
-                      'Require confirmation for POST, PUT, PATCH, and DELETE in production environments.',
-                    ),
-                    value: settings.productionStrictMode,
-                    onChanged: (value) => cubit.updateSettings(
-                      WorkspaceSettingsModel(
-                        historyRetentionDays: settings.historyRetentionDays,
-                        historyMaximumCount: settings.historyMaximumCount,
-                        responsePreviewBytes: settings.responsePreviewBytes,
-                        productionStrictMode: value,
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _SettingsWorkbenchSection(
+                  title: 'Production safeguards',
+                  subtitle:
+                      'Deliberate controls for requests that can change live data.',
+                  children: [
+                    _SettingsSwitchRow(
+                      icon: Icons.verified_user_outlined,
+                      label: 'Confirm mutating production requests',
+                      detail:
+                          'Require confirmation for POST, PUT, PATCH, and DELETE.',
+                      value: settings.productionStrictMode,
+                      onChanged: (value) => cubit.updateSettings(
+                        WorkspaceSettingsModel(
+                          historyRetentionDays: settings.historyRetentionDays,
+                          historyMaximumCount: settings.historyMaximumCount,
+                          responsePreviewBytes: settings.responsePreviewBytes,
+                          productionStrictMode: value,
+                        ),
                       ),
                     ),
-                  ),
-                  const ListTile(
-                    leading: Icon(Icons.lock_outline),
-                    title: Text('TLS verification is on by default'),
-                    subtitle: Text(
-                      'HTTPS requests cannot silently disable certificate verification.',
+                    const _SettingsInformationRow(
+                      icon: Icons.lock_outline,
+                      label: 'TLS verification stays enabled',
+                      detail:
+                          'HTTPS requests cannot silently disable certificate verification.',
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
@@ -2630,6 +3355,451 @@ class _AppShellState extends State<AppShell> {
   }
 }
 
+Color _httpMethodColor(String method) => switch (method.toUpperCase()) {
+  'GET' => const Color(0xFF36C58A),
+  'POST' => const Color(0xFF6E8CFF),
+  'PUT' || 'PATCH' => const Color(0xFFE5A348),
+  'DELETE' => const Color(0xFFE76A76),
+  _ => const Color(0xFF9AA4B3),
+};
+
+class _HttpMethodBadge extends StatelessWidget {
+  const _HttpMethodBadge({required this.method});
+
+  final String method;
+
+  @override
+  Widget build(BuildContext context) {
+    final normalized = method.toUpperCase();
+    final color = _httpMethodColor(normalized);
+    return Container(
+      constraints: const BoxConstraints(minWidth: 40),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .13),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Text(
+        normalized,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _EnvironmentVariableHeader extends StatelessWidget {
+  const _EnvironmentVariableHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.labelSmall?.copyWith(
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+      fontWeight: FontWeight.w800,
+      letterSpacing: .65,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 560;
+        return SizedBox(
+          height: 34,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              children: [
+                const SizedBox(width: 36),
+                SizedBox(
+                  width: compact ? 118 : 172,
+                  child: Text('KEY', style: style),
+                ),
+                Expanded(child: Text('VALUE', style: style)),
+                if (!compact)
+                  SizedBox(width: 72, child: Text('TYPE', style: style)),
+                const SizedBox(width: 108),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _EnvironmentVariableRow extends StatelessWidget {
+  const _EnvironmentVariableRow({
+    required this.variable,
+    required this.isFirst,
+    required this.isLast,
+    required this.onTap,
+    required this.onEnabled,
+    required this.onMoveUp,
+    required this.onMoveDown,
+    required this.onDelete,
+  });
+
+  final EnvironmentVariableModel variable;
+  final bool isFirst;
+  final bool isLast;
+  final VoidCallback onTap;
+  final ValueChanged<bool> onEnabled;
+  final VoidCallback onMoveUp;
+  final VoidCallback onMoveDown;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 560;
+      final colors = Theme.of(context).colorScheme;
+      final value = variable.isSecret
+          ? '[SECURE STORAGE REFERENCE]'
+          : variable.value;
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 48),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: Theme.of(context).dividerTheme.color!,
+                ),
+              ),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 36,
+                  child: Checkbox(
+                    value: variable.enabled,
+                    onChanged: (enabled) => onEnabled(enabled ?? true),
+                  ),
+                ),
+                SizedBox(
+                  width: compact ? 118 : 172,
+                  child: Text(
+                    variable.key,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: variable.isSecret
+                          ? colors.onSurfaceVariant
+                          : colors.onSurface,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                ),
+                if (!compact)
+                  SizedBox(
+                    width: 72,
+                    child: Text(
+                      variable.isSecret ? 'SECRET' : 'PLAIN',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: variable.isSecret
+                            ? colors.tertiary
+                            : colors.onSurfaceVariant,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: .55,
+                      ),
+                    ),
+                  ),
+                IconButton(
+                  tooltip: 'Move up',
+                  onPressed: isFirst ? null : onMoveUp,
+                  icon: const Icon(Icons.arrow_upward, size: 16),
+                ),
+                IconButton(
+                  tooltip: 'Move down',
+                  onPressed: isLast ? null : onMoveDown,
+                  icon: const Icon(Icons.arrow_downward, size: 16),
+                ),
+                IconButton(
+                  tooltip: 'Delete variable',
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline, size: 17),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class _SettingsWorkbenchSection extends StatelessWidget {
+  const _SettingsWorkbenchSection({
+    required this.title,
+    required this.subtitle,
+    required this.children,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => ConstrainedBox(
+    constraints: const BoxConstraints(maxWidth: 860),
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border.all(color: Theme.of(context).dividerTheme.color!),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          ...children,
+        ],
+      ),
+    ),
+  );
+}
+
+class _SettingsNumberRow extends StatelessWidget {
+  const _SettingsNumberRow({
+    required this.label,
+    required this.detail,
+    required this.value,
+    required this.suffix,
+    required this.onSubmitted,
+  });
+
+  final String label;
+  final String detail;
+  final int value;
+  final String suffix;
+  final ValueChanged<int> onSubmitted;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    child: Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 2),
+              Text(
+                detail,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+        SizedBox(
+          width: 142,
+          child: TextFormField(
+            key: ValueKey('$label-$value'),
+            initialValue: value.toString(),
+            keyboardType: TextInputType.number,
+            textAlign: TextAlign.right,
+            decoration: InputDecoration(
+              isDense: true,
+              suffixText: suffix,
+              border: const OutlineInputBorder(),
+            ),
+            onFieldSubmitted: (text) {
+              final parsed = int.tryParse(text);
+              if (parsed != null && parsed > 0) onSubmitted(parsed);
+            },
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _SettingsSwitchRow extends StatelessWidget {
+  const _SettingsSwitchRow({
+    required this.icon,
+    required this.label,
+    required this.detail,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String label;
+  final String detail;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+    child: Row(
+      children: [
+        Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 2),
+              Text(
+                detail,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Switch(value: value, onChanged: onChanged),
+      ],
+    ),
+  );
+}
+
+class _SettingsInformationRow extends StatelessWidget {
+  const _SettingsInformationRow({
+    required this.icon,
+    required this.label,
+    required this.detail,
+  });
+
+  final IconData icon;
+  final String label;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(14, 9, 14, 12),
+    child: Row(
+      children: [
+        Icon(
+          icon,
+          size: 20,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 2),
+              Text(
+                detail,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ActivityRail extends StatelessWidget {
+  const _ActivityRail({required this.selected, required this.onSelect});
+  final int selected;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    // Workspace is a first-class activity. Hiding it behind the Explorer made
+    // the default desktop flow harder to discover on compact widths.
+    final destinations = <int>[0, 1, 6, 5, 7, 8, 2, 3, 4];
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: 48,
+      color: Theme.of(context).colorScheme.surface,
+      child: Column(
+        children: [
+          const SizedBox(height: 7),
+          Tooltip(
+            message: 'DevRoute workspace',
+            child: Icon(Icons.route_outlined, color: colors.primary, size: 22),
+          ),
+          const SizedBox(height: 10),
+          for (final index in destinations)
+            Tooltip(
+              message: _shellDestinations[index].label,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: IconButton(
+                  onPressed: () => onSelect(index),
+                  style: IconButton.styleFrom(
+                    backgroundColor: selected == index
+                        ? colors.primary.withValues(alpha: .16)
+                        : Colors.transparent,
+                    foregroundColor: selected == index
+                        ? colors.primary
+                        : colors.onSurfaceVariant,
+                  ),
+                  icon: Icon(
+                    selected == index
+                        ? _shellDestinations[index].selectedIcon
+                        : _shellDestinations[index].icon,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+          const Spacer(),
+          Tooltip(
+            message: 'Local workspace ready',
+            child: Container(
+              width: 7,
+              height: 7,
+              margin: const EdgeInsets.only(bottom: 13),
+              decoration: const BoxDecoration(
+                color: AppTheme.live,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Legacy navigation implementation retained temporarily while the responsive
+// phone shell migrates to the workbench primitives.
+// ignore: unused_element
 class _NavigationSidebar extends StatelessWidget {
   const _NavigationSidebar({
     required this.expanded,
@@ -2857,18 +4027,24 @@ class _WorkspaceToolbar extends StatelessWidget {
     required this.destination,
     required this.onNewRequest,
     required this.onCommandPalette,
+    required this.sidebarAvailable,
+    required this.sidebarVisible,
+    required this.onToggleSidebar,
   });
 
   final _ShellDestination destination;
   final VoidCallback onNewRequest;
   final VoidCallback onCommandPalette;
+  final bool sidebarAvailable;
+  final bool sidebarVisible;
+  final VoidCallback onToggleSidebar;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Container(
-      height: 76,
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
         color: Theme.of(context).scaffoldBackgroundColor,
         border: Border(
@@ -2879,39 +4055,42 @@ class _WorkspaceToolbar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(destination.selectedIcon, color: colors.primary),
-          const SizedBox(width: 12),
+          if (sidebarAvailable)
+            IconButton(
+              tooltip: sidebarVisible
+                  ? 'Hide explorer (Ctrl+B)'
+                  : 'Show explorer (Ctrl+B)',
+              onPressed: onToggleSidebar,
+              icon: Icon(
+                sidebarVisible
+                    ? Icons.vertical_split_outlined
+                    : Icons.view_sidebar_outlined,
+                size: 18,
+              ),
+            ),
+          if (sidebarAvailable) const SizedBox(width: 5),
+          Icon(destination.selectedIcon, color: colors.primary, size: 18),
+          const SizedBox(width: 7),
           Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  destination.label,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  destination.description,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-              ],
+            child: Text(
+              destination.label,
+              style: Theme.of(context).textTheme.titleMedium,
             ),
           ),
+          _EnvironmentMenu(),
+          const SizedBox(width: 6),
           Tooltip(
             message: 'Command palette (Ctrl+K)',
             child: OutlinedButton.icon(
               onPressed: onCommandPalette,
-              icon: const Icon(Icons.search_rounded),
+              icon: const Icon(Icons.search_rounded, size: 17),
               label: const Text('Search'),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 4),
           PopupMenuButton<ThemeMode>(
             tooltip: 'Appearance',
-            icon: const Icon(Icons.brightness_6_outlined),
+            icon: const Icon(Icons.brightness_6_outlined, size: 18),
             onSelected: (mode) => DevRouteAppearance.mode.value = mode,
             itemBuilder: (_) => const [
               PopupMenuItem(
@@ -2928,15 +4107,80 @@ class _WorkspaceToolbar extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(width: 4),
           Tooltip(
             message: 'New request',
             child: FilledButton.icon(
               onPressed: onNewRequest,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('New request'),
+              icon: const Icon(Icons.add_rounded, size: 17),
+              label: const Text('New'),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _EnvironmentMenu extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final workspace = context.watch<WorkspaceCubit>().state;
+    final active = workspace.environments
+        .where((item) => item.id == workspace.selectedEnvironmentId)
+        .firstOrNull;
+    final production = active?.kind == EnvironmentKind.production;
+    final dot = production ? const Color(0xFFE5A348) : AppTheme.live;
+    return PopupMenuButton<String>(
+      tooltip: 'Active environment',
+      enabled: workspace.environments.isNotEmpty,
+      onSelected: (id) => context.read<WorkspaceCubit>().setEnvironment(id),
+      itemBuilder: (_) => [
+        for (final environment in workspace.environments)
+          PopupMenuItem(
+            value: environment.id,
+            child: Row(
+              children: [
+                Icon(
+                  Icons.circle,
+                  size: 8,
+                  color: environment.kind == EnvironmentKind.production
+                      ? const Color(0xFFE5A348)
+                      : AppTheme.live,
+                ),
+                const SizedBox(width: 8),
+                Text(environment.name),
+                if (environment.isActive) ...[
+                  const Spacer(),
+                  const Icon(Icons.check, size: 16),
+                ],
+              ],
+            ),
+          ),
+      ],
+      child: Container(
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: production
+                ? const Color(0xFFE5A348).withValues(alpha: .65)
+                : Theme.of(context).dividerTheme.color!,
+          ),
+          borderRadius: BorderRadius.circular(5),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.circle, size: 7, color: dot),
+            const SizedBox(width: 6),
+            Text(
+              active?.name ?? 'No environment',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+            const Icon(Icons.arrow_drop_down, size: 16),
+          ],
+        ),
       ),
     );
   }

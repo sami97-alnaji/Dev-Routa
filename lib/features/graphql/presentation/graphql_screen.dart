@@ -39,6 +39,7 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
   final _search = TextEditingController();
   final _curlCodec = GraphqlCurlCodec();
   final _exportService = GraphqlSafeExportService();
+  bool _requestOptionsExpanded = false;
 
   @override
   void dispose() {
@@ -551,7 +552,7 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
               ActionChip(label: const Text('+'), onPressed: cubit.newDraft),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           TextField(
             controller: _endpoint,
             onChanged: cubit.updateEndpoint,
@@ -574,166 +575,7 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
             ],
             onChanged: cubit.selectOperation,
           ),
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Use HTTP GET (queries only)'),
-            value: draft.request.useGet,
-            onChanged: cubit.updateUseGet,
-          ),
-          DropdownButtonFormField<AuthType>(
-            key: ValueKey<String>('auth-${draft.id}'),
-            initialValue: draft.request.auth.type,
-            decoration: const InputDecoration(
-              labelText: 'Authentication',
-              border: OutlineInputBorder(),
-            ),
-            items: [
-              for (final type in AuthType.values)
-                DropdownMenuItem(value: type, child: Text(type.name)),
-            ],
-            onChanged: (type) {
-              if (type != null) {
-                cubit.updateAuth(
-                  RequestAuthModel(
-                    type: type,
-                    username: draft.request.auth.username,
-                    passwordSecretRef: draft.request.auth.passwordSecretRef,
-                    tokenSecretRef: draft.request.auth.tokenSecretRef,
-                    apiKeyName: draft.request.auth.apiKeyName,
-                    apiKeySecretRef: draft.request.auth.apiKeySecretRef,
-                  ),
-                );
-              }
-            },
-          ),
-          if (draft.request.auth.type == AuthType.basic)
-            TextField(
-              controller: _username,
-              onChanged: (value) => cubit.updateAuth(
-                RequestAuthModel(
-                  type: draft.request.auth.type,
-                  username: value,
-                  passwordSecretRef: draft.request.auth.passwordSecretRef,
-                ),
-              ),
-              decoration: const InputDecoration(
-                labelText: 'Basic username',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          if (draft.request.auth.type != AuthType.none)
-            TextField(
-              controller: _secretRef,
-              onChanged: (value) => cubit.updateAuth(
-                RequestAuthModel(
-                  type: draft.request.auth.type,
-                  username: draft.request.auth.username,
-                  passwordSecretRef: draft.request.auth.type == AuthType.basic
-                      ? value
-                      : draft.request.auth.passwordSecretRef,
-                  tokenSecretRef: draft.request.auth.type == AuthType.bearer
-                      ? value
-                      : draft.request.auth.tokenSecretRef,
-                  apiKeyName: draft.request.auth.apiKeyName,
-                  apiKeySecretRef:
-                      draft.request.auth.type == AuthType.apiKeyHeader ||
-                          draft.request.auth.type == AuthType.apiKeyQuery
-                      ? value
-                      : draft.request.auth.apiKeySecretRef,
-                ),
-              ),
-              decoration: const InputDecoration(
-                labelText: 'Secure reference (never the secret value)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          TextField(
-            controller: _headers,
-            minLines: 2,
-            maxLines: 4,
-            onChanged: (value) {
-              try {
-                final decoded = jsonDecode(value);
-                if (decoded is Map) {
-                  cubit.updateHeaders(
-                    decoded.map(
-                      (key, item) => MapEntry(key.toString(), item.toString()),
-                    ),
-                  );
-                }
-              } on FormatException {
-                // Keep invalid JSON visible until corrected.
-              }
-            },
-            decoration: const InputDecoration(
-              labelText: 'Enabled headers JSON',
-              border: OutlineInputBorder(),
-            ),
-          ),
           const SizedBox(height: 8),
-          TextField(
-            controller: _extensions,
-            minLines: 2,
-            maxLines: 4,
-            onChanged: (value) {
-              try {
-                final decoded = jsonDecode(value);
-                if (decoded is Map) {
-                  cubit.updateExtensions(decoded.cast<String, Object?>());
-                }
-              } on FormatException {
-                // Keep invalid JSON visible until corrected.
-              }
-            },
-            decoration: const InputDecoration(
-              labelText: 'Extensions JSON',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          if (analysis.errors.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                analysis.errors.join('\n'),
-                style: const TextStyle(color: Colors.red),
-              ),
-            ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 260,
-            child: TextField(
-              controller: _document,
-              maxLines: null,
-              expands: true,
-              onChanged: cubit.updateDocument,
-              decoration: const InputDecoration(
-                labelText: 'GraphQL document',
-                alignLabelWithHint: true,
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _variables,
-            minLines: 3,
-            maxLines: 6,
-            onChanged: (value) {
-              try {
-                final decoded = jsonDecode(value);
-                if (decoded is Map) {
-                  cubit.updateVariables(decoded.cast<String, Object?>());
-                }
-              } on FormatException {
-                // Keep the invalid editor text so the user can correct it.
-              }
-            },
-            decoration: const InputDecoration(
-              labelText: 'Variables JSON',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -761,6 +603,203 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
                 icon: const Icon(Icons.stop),
                 label: const Text('Cancel'),
               ),
+              OutlinedButton.icon(
+                onPressed: () => _saveTab(context, cubit, draft),
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Save draft'),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Request options',
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => setState(
+                  () => _requestOptionsExpanded = !_requestOptionsExpanded,
+                ),
+                icon: Icon(
+                  _requestOptionsExpanded
+                      ? Icons.expand_less
+                      : Icons.tune_outlined,
+                  size: 18,
+                ),
+                label: Text(_requestOptionsExpanded ? 'Hide' : 'Configure'),
+              ),
+            ],
+          ),
+          if (_requestOptionsExpanded) ...[
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('Use HTTP GET (queries only)'),
+              value: draft.request.useGet,
+              onChanged: cubit.updateUseGet,
+            ),
+            DropdownButtonFormField<AuthType>(
+              key: ValueKey<String>('auth-${draft.id}'),
+              initialValue: draft.request.auth.type,
+              decoration: const InputDecoration(
+                labelText: 'Authentication',
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                for (final type in AuthType.values)
+                  DropdownMenuItem(value: type, child: Text(type.name)),
+              ],
+              onChanged: (type) {
+                if (type != null) {
+                  cubit.updateAuth(
+                    RequestAuthModel(
+                      type: type,
+                      username: draft.request.auth.username,
+                      passwordSecretRef: draft.request.auth.passwordSecretRef,
+                      tokenSecretRef: draft.request.auth.tokenSecretRef,
+                      apiKeyName: draft.request.auth.apiKeyName,
+                      apiKeySecretRef: draft.request.auth.apiKeySecretRef,
+                    ),
+                  );
+                }
+              },
+            ),
+            if (draft.request.auth.type == AuthType.basic)
+              TextField(
+                controller: _username,
+                onChanged: (value) => cubit.updateAuth(
+                  RequestAuthModel(
+                    type: draft.request.auth.type,
+                    username: value,
+                    passwordSecretRef: draft.request.auth.passwordSecretRef,
+                  ),
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Basic username',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            if (draft.request.auth.type != AuthType.none)
+              TextField(
+                controller: _secretRef,
+                onChanged: (value) => cubit.updateAuth(
+                  RequestAuthModel(
+                    type: draft.request.auth.type,
+                    username: draft.request.auth.username,
+                    passwordSecretRef: draft.request.auth.type == AuthType.basic
+                        ? value
+                        : draft.request.auth.passwordSecretRef,
+                    tokenSecretRef: draft.request.auth.type == AuthType.bearer
+                        ? value
+                        : draft.request.auth.tokenSecretRef,
+                    apiKeyName: draft.request.auth.apiKeyName,
+                    apiKeySecretRef:
+                        draft.request.auth.type == AuthType.apiKeyHeader ||
+                            draft.request.auth.type == AuthType.apiKeyQuery
+                        ? value
+                        : draft.request.auth.apiKeySecretRef,
+                  ),
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Secure reference (never the secret value)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            TextField(
+              controller: _headers,
+              minLines: 2,
+              maxLines: 4,
+              onChanged: (value) {
+                try {
+                  final decoded = jsonDecode(value);
+                  if (decoded is Map) {
+                    cubit.updateHeaders(
+                      decoded.map(
+                        (key, item) =>
+                            MapEntry(key.toString(), item.toString()),
+                      ),
+                    );
+                  }
+                } on FormatException {
+                  // Keep invalid JSON visible until corrected.
+                }
+              },
+              decoration: const InputDecoration(
+                labelText: 'Enabled headers JSON',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _extensions,
+              minLines: 2,
+              maxLines: 4,
+              onChanged: (value) {
+                try {
+                  final decoded = jsonDecode(value);
+                  if (decoded is Map) {
+                    cubit.updateExtensions(decoded.cast<String, Object?>());
+                  }
+                } on FormatException {
+                  // Keep invalid JSON visible until corrected.
+                }
+              },
+              decoration: const InputDecoration(
+                labelText: 'Extensions JSON',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+          if (analysis.errors.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                analysis.errors.join('\n'),
+                style: const TextStyle(color: Colors.red),
+              ),
+            ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 300,
+            child: TextField(
+              controller: _document,
+              maxLines: null,
+              expands: true,
+              onChanged: cubit.updateDocument,
+              decoration: const InputDecoration(
+                labelText: 'GraphQL document',
+                alignLabelWithHint: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _variables,
+            minLines: 3,
+            maxLines: 6,
+            onChanged: (value) {
+              try {
+                final decoded = jsonDecode(value);
+                if (decoded is Map) {
+                  cubit.updateVariables(decoded.cast<String, Object?>());
+                }
+              } on FormatException {
+                // Keep the invalid editor text so the user can correct it.
+              }
+            },
+            decoration: const InputDecoration(
+              labelText: 'Variables JSON',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
               OutlinedButton.icon(
                 onPressed: () => _saveTab(context, cubit, draft),
                 icon: const Icon(Icons.save_outlined),
@@ -855,7 +894,9 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
         onDelete: (entry) => cubit.deleteHistory(entry.id),
         onExport: (entry) => _exportHistory(context, entry),
       );
-      return MediaQuery.sizeOf(context).width < 900
+      final width = MediaQuery.sizeOf(context).width;
+      final useShellContextSidebar = width >= 1180;
+      return width < 900
           ? ListView(
               children: [
                 editor,
@@ -872,17 +913,19 @@ class _GraphqlScreenState extends State<GraphqlScreen> {
             )
           : Row(
               children: [
-                SizedBox(
-                  width: 280,
-                  child: Column(
-                    children: [
-                      Expanded(flex: 2, child: saved),
-                      const Divider(),
-                      Expanded(flex: 3, child: history),
-                    ],
+                if (!useShellContextSidebar) ...[
+                  SizedBox(
+                    width: 280,
+                    child: Column(
+                      children: [
+                        Expanded(flex: 2, child: saved),
+                        const Divider(),
+                        Expanded(flex: 3, child: history),
+                      ],
+                    ),
                   ),
-                ),
-                const VerticalDivider(),
+                  const VerticalDivider(),
+                ],
                 Expanded(child: SingleChildScrollView(child: editor)),
                 const VerticalDivider(),
                 Expanded(child: response),

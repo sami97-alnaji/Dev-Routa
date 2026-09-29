@@ -12,6 +12,7 @@ import '../../../core/diagnostics/developer_diagnostics.dart';
 import '../../../core/diagnostics/diagnostic_bundle_service.dart';
 import '../../../core/diagnostics/history_comparison_service.dart';
 import '../../../core/security/secret_masker.dart';
+import '../../../core/widgets/devroute_desktop.dart';
 import '../../../shared/models/api_models.dart';
 import '../../workspace/presentation/workspace_cubit.dart';
 import '../data/realtime_repository.dart';
@@ -253,7 +254,7 @@ class _RealtimeScreenState extends State<RealtimeScreen>
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Realtime', style: Theme.of(context).textTheme.headlineMedium),
+            Text('Realtime', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 6),
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -264,8 +265,8 @@ class _RealtimeScreenState extends State<RealtimeScreen>
       }
       return Row(
         children: [
-          Text('Realtime', style: Theme.of(context).textTheme.headlineMedium),
-          const SizedBox(width: 16),
+          Text('Realtime', style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(width: 10),
           Expanded(
             child: Align(
               alignment: Alignment.centerRight,
@@ -280,29 +281,16 @@ class _RealtimeScreenState extends State<RealtimeScreen>
     },
   );
 
-  Widget _sessionTabs(BuildContext context) => SizedBox(
-    height: 48,
-    child: ListView(
-      scrollDirection: Axis.horizontal,
-      children: [
-        for (var index = 0; index < _tabs.length; index++)
-          Padding(
-            padding: const EdgeInsets.only(right: 6),
-            child: InputChip(
-              selected: index == _active,
-              label: Text(_tabs[index].name.text),
-              avatar: Icon(_icon(_tabs[index].protocol), size: 18),
-              onPressed: () => setState(() => _active = index),
-              onDeleted: _tabs.length == 1 ? null : () => _closeTab(index),
-            ),
-          ),
-        IconButton(
-          tooltip: 'New independent session (Ctrl+N)',
-          onPressed: _newTab,
-          icon: const Icon(Icons.add_circle_outline),
-        ),
-      ],
-    ),
+  Widget _sessionTabs(BuildContext context) => DevRouteTabStrip(
+    tabs: _tabs
+        .map(
+          (tab) => DevRouteWorkbenchTab(label: tab.name.text, dirty: tab.dirty),
+        )
+        .toList(),
+    activeIndex: _active,
+    onSelected: (index) => setState(() => _active = index),
+    onClose: _tabs.length == 1 ? null : _closeTab,
+    onNew: _newTab,
   );
 
   Widget _session(

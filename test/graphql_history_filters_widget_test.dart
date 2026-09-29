@@ -42,7 +42,11 @@ void main() {
 
       await tester.pumpWidget(DevRouteApp(database: database));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('GraphQL').last);
+      await tester.tap(
+        size.width >= 720
+            ? find.byTooltip('GraphQL')
+            : find.text('GraphQL').last,
+      );
       await tester.pumpAndSettle();
       final cubit = BlocProvider.of<GraphqlWorkflowCubit>(
         tester.element(find.text('GraphQL Studio')),

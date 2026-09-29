@@ -300,6 +300,144 @@ class GraphqlSchemaSnapshots extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+class GrpcDescriptorSnapshots extends Table {
+  TextColumn get id => text()();
+  TextColumn get workspaceId =>
+      text().references(Workspaces, #id, onDelete: KeyAction.cascade)();
+  TextColumn get fingerprint => text()();
+  TextColumn get sourceType => text()();
+  TextColumn get displayName => text()();
+  TextColumn get sourceIdentity => text().nullable()();
+  BlobColumn get descriptorBytes => blob()();
+  IntColumn get descriptorByteCount => integer()();
+  IntColumn get fileCount => integer()();
+  IntColumn get serviceCount => integer()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get lastUsedAt => dateTime()();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class GrpcSavedRequests extends Table {
+  TextColumn get id => text()();
+  TextColumn get workspaceId =>
+      text().references(Workspaces, #id, onDelete: KeyAction.cascade)();
+  TextColumn get collectionId => text().nullable()();
+  TextColumn get folderId => text().nullable()();
+  TextColumn get descriptorSnapshotId => text().nullable().references(
+    GrpcDescriptorSnapshots,
+    #id,
+    onDelete: KeyAction.restrict,
+  )();
+  TextColumn get name => text()();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  TextColumn get serviceFullName => text()();
+  TextColumn get methodName => text()();
+  TextColumn get methodPath => text()();
+  TextColumn get invocationKind => text()();
+  TextColumn get endpointJson => text()();
+  TextColumn get requestJson => text()();
+  TextColumn get metadataJson => text()();
+  TextColumn get certificateReferencesJson =>
+      text().withDefault(const Constant('[]'))();
+  IntColumn get revision => integer().withDefault(const Constant(1))();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class GrpcDrafts extends Table {
+  TextColumn get id => text()();
+  TextColumn get workspaceId =>
+      text().references(Workspaces, #id, onDelete: KeyAction.cascade)();
+  TextColumn get sourceSavedRequestId => text().nullable().references(
+    GrpcSavedRequests,
+    #id,
+    onDelete: KeyAction.setNull,
+  )();
+  TextColumn get descriptorSnapshotId => text().nullable().references(
+    GrpcDescriptorSnapshots,
+    #id,
+    onDelete: KeyAction.restrict,
+  )();
+  TextColumn get title => text()();
+  TextColumn get methodIdentityJson => text()();
+  TextColumn get endpointJson => text()();
+  TextColumn get requestJson => text()();
+  TextColumn get metadataJson => text()();
+  TextColumn get certificateReferencesJson =>
+      text().withDefault(const Constant('[]'))();
+  IntColumn get revision => integer().withDefault(const Constant(1))();
+  IntColumn get tabOrder => integer().withDefault(const Constant(0))();
+  BoolColumn get dirty => boolean().withDefault(const Constant(true))();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get lastOpenedAt => dateTime()();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class GrpcInvocationHistory extends Table {
+  TextColumn get id => text()();
+  TextColumn get workspaceId =>
+      text().references(Workspaces, #id, onDelete: KeyAction.cascade)();
+  TextColumn get savedRequestId => text().nullable().references(
+    GrpcSavedRequests,
+    #id,
+    onDelete: KeyAction.setNull,
+  )();
+  TextColumn get descriptorSnapshotId => text().nullable().references(
+    GrpcDescriptorSnapshots,
+    #id,
+    onDelete: KeyAction.restrict,
+  )();
+  TextColumn get invocationKind => text()();
+  DateTimeColumn get startedAt => dateTime()();
+  DateTimeColumn get completedAt => dateTime().nullable()();
+  IntColumn get durationMicroseconds => integer().nullable()();
+  TextColumn get endpointJson => text()();
+  TextColumn get methodIdentityJson => text()();
+  TextColumn get requestJson => text()();
+  TextColumn get requestMetadataJson => text()();
+  TextColumn get responseJson => text().nullable()();
+  TextColumn get responseHeadersJson => text()();
+  TextColumn get responseTrailersJson => text()();
+  IntColumn get statusCode => integer().nullable()();
+  TextColumn get statusName => text().nullable()();
+  TextColumn get statusMessage => text().nullable()();
+  IntColumn get requestByteCount => integer().withDefault(const Constant(0))();
+  IntColumn get responseByteCount => integer().withDefault(const Constant(0))();
+  TextColumn get outcome => text()();
+  TextColumn get diagnosticCategory => text().nullable()();
+  IntColumn get droppedEventCount => integer().withDefault(const Constant(0))();
+  TextColumn get terminalState => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+class GrpcStoredStreamEvents extends Table {
+  TextColumn get id => text()();
+  TextColumn get sessionHistoryId => text().references(
+    GrpcInvocationHistory,
+    #id,
+    onDelete: KeyAction.cascade,
+  )();
+  IntColumn get sequenceNumber => integer()();
+  TextColumn get direction => text()();
+  TextColumn get category => text()();
+  DateTimeColumn get occurredAt => dateTime()();
+  TextColumn get decodedPayloadJson => text().nullable()();
+  IntColumn get rawByteCount => integer().withDefault(const Constant(0))();
+  BlobColumn get retainedRawBytes => blob().nullable()();
+  IntColumn get statusCode => integer().nullable()();
+  TextColumn get statusText => text().nullable()();
+  TextColumn get decodeFailureCategory => text().nullable()();
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 @DriftDatabase(
   tables: <Type>[
     Workspaces,
@@ -325,6 +463,11 @@ class GraphqlSchemaSnapshots extends Table {
     GraphqlHistory,
     GraphqlSavedRequests,
     GraphqlSchemaSnapshots,
+    GrpcDescriptorSnapshots,
+    GrpcSavedRequests,
+    GrpcDrafts,
+    GrpcInvocationHistory,
+    GrpcStoredStreamEvents,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -332,7 +475,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -389,8 +532,16 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(graphqlDrafts);
         await m.createTable(graphqlHistory);
       }
+      if (from < 7) {
+        await m.createTable(grpcDescriptorSnapshots);
+        await m.createTable(grpcSavedRequests);
+        await m.createTable(grpcDrafts);
+        await m.createTable(grpcInvocationHistory);
+        await m.createTable(grpcStoredStreamEvents);
+      }
     },
     beforeOpen: (details) async {
+      await customStatement('PRAGMA foreign_keys = ON');
       // These additive tables were introduced after schema version 6 was
       // already published. IF NOT EXISTS upgrades existing v6 databases
       // without resetting or rewriting their data.
@@ -406,6 +557,27 @@ class AppDatabase extends _$AppDatabase {
         id TEXT PRIMARY KEY NOT NULL, workspace_id TEXT NOT NULL,
         endpoint_fingerprint TEXT NOT NULL, schema_hash TEXT NOT NULL,
         snapshot_json TEXT NOT NULL, fetched_at INTEGER NOT NULL)''',
+      );
+      await customStatement(
+        'CREATE UNIQUE INDEX IF NOT EXISTS grpc_descriptor_workspace_fingerprint ON grpc_descriptor_snapshots(workspace_id, fingerprint)',
+      );
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS grpc_descriptor_workspace_source ON grpc_descriptor_snapshots(workspace_id, source_type, display_name)',
+      );
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS grpc_saved_location_order ON grpc_saved_requests(workspace_id, collection_id, folder_id, sort_order)',
+      );
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS grpc_draft_workspace_order ON grpc_drafts(workspace_id, tab_order)',
+      );
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS grpc_history_filters ON grpc_invocation_history(workspace_id, invocation_kind, outcome, created_at)',
+      );
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS grpc_history_method ON grpc_invocation_history(workspace_id, method_identity_json, created_at)',
+      );
+      await customStatement(
+        'CREATE UNIQUE INDEX IF NOT EXISTS grpc_stream_event_sequence ON grpc_stored_stream_events(session_history_id, sequence_number)',
       );
     },
   );

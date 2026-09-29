@@ -294,7 +294,7 @@ class AgentOrchestrator {
           ]);
       if (control.cancelled) throw const _RunCancelled();
       if (utf8.encode(jsonEncode(output)).length > tool.maximumOutputBytes) {
-        return _toolFailure(audit, call, 'maximum_output_bytes');
+        return await _toolFailure(audit, call, 'maximum_output_bytes');
       }
       final safeOutput = <String, Object?>{'summary': _safe(output.toString())};
       await audit.tool(

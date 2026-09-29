@@ -114,7 +114,12 @@ void main() {
       AgentAuthenticationStatus.authenticated,
     );
     expect(captured!['CODEX_HOME'], root.path);
-    expect(captured!.keys, containsAll(<String>['SystemRoot', 'TEMP', 'TMP']));
+    expect(captured!['HOME'], root.path);
+    expect(
+      captured!.keys,
+      containsAll(<String>['HOME', 'TEMP', 'TMP', 'TMPDIR']),
+    );
+    expect(captured!.containsKey('SystemRoot'), Platform.isWindows);
     expect(captured!.containsKey('OPENAI_API_KEY'), isFalse);
     expect(captured!.containsKey('CODEX_API_KEY'), isFalse);
     expect(captured!.containsKey('CODEX_ACCESS_TOKEN'), isFalse);

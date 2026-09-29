@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:devroute_ai_studio/features/grpc/application/grpc_proto_import_policy.dart';
@@ -10,6 +11,7 @@ import 'package:devroute_ai_studio/features/grpc/data/generated/google/protobuf/
 import 'package:devroute_ai_studio/features/grpc/data/grpc_descriptor_loader.dart';
 import 'package:devroute_ai_studio/features/grpc/domain/grpc_descriptor_models.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as path;
 
 void main() {
   test('loads and indexes an included FileDescriptorSet deterministically', () {
@@ -140,21 +142,26 @@ void main() {
 
   test(
     'import policy rejects traversal, schemes and roots outside selection',
-    () {
+    () async {
       const policy = GrpcProtoImportPolicy();
+      final selectedRoot = await Directory.systemTemp.createTemp(
+        'grpc-import-policy-test-',
+      );
+      addTearDown(() => selectedRoot.delete(recursive: true));
+      final selected = selectedRoot.path;
+      final sourcePath = path.join(selected, 'api.proto');
+      final includeRoot = path.join(selected, 'includes');
+
       expect(
-        policy.resolveRootSource(
-          sourcePath: r'C:\selected\api.proto',
-          sourceRoot: r'C:\selected',
-        ),
-        r'C:\selected\api.proto',
+        policy.resolveRootSource(sourcePath: sourcePath, sourceRoot: selected),
+        sourcePath,
       );
       expect(
         policy.resolveImport(
           importPath: 'common/types.proto',
-          allowedRoots: <String>[r'C:\selected', r'C:\includes'],
+          allowedRoots: <String>[selected, includeRoot],
         ),
-        r'C:\selected\common\types.proto',
+        path.join(selected, 'common', 'types.proto'),
       );
       for (final value in <String>[
         '../secret.proto',
@@ -170,7 +177,7 @@ void main() {
         expect(
           () => policy.resolveImport(
             importPath: value,
-            allowedRoots: <String>[r'C:\selected'],
+            allowedRoots: <String>[selected],
           ),
           throwsA(isA<GrpcDescriptorException>()),
         );
@@ -178,9 +185,9 @@ void main() {
       expect(
         policy.resolveImport(
           importPath: r'common\nested\types.proto',
-          allowedRoots: <String>[r'C:\selected'],
+          allowedRoots: <String>[selected],
         ),
-        r'C:\selected\common\nested\types.proto',
+        path.join(selected, 'common', 'nested', 'types.proto'),
       );
     },
   );

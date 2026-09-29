@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
 
 import '../../../features/grpc/data/grpc_persistence_repository.dart';
@@ -1165,11 +1166,30 @@ inherit = "none"
 
   Directory get homeDirectory {
     if (_homeDirectory != null) return _homeDirectory;
-    final localAppData = Platform.environment['LOCALAPPDATA'];
-    if (localAppData == null || localAppData.isEmpty) {
+    final environment = Platform.environment;
+    final String? appDataDirectory;
+    if (Platform.isWindows) {
+      appDataDirectory = environment['LOCALAPPDATA'];
+    } else if (Platform.isLinux) {
+      final xdgDataHome = environment['XDG_DATA_HOME'];
+      final userHome = environment['HOME'];
+      appDataDirectory = xdgDataHome != null && xdgDataHome.isNotEmpty
+          ? xdgDataHome
+          : userHome == null || userHome.isEmpty
+          ? null
+          : path.join(userHome, '.local', 'share');
+    } else if (Platform.isMacOS) {
+      final userHome = environment['HOME'];
+      appDataDirectory = userHome == null || userHome.isEmpty
+          ? null
+          : path.join(userHome, 'Library', 'Application Support');
+    } else {
+      appDataDirectory = null;
+    }
+    if (appDataDirectory == null || appDataDirectory.isEmpty) {
       throw const _CodexFailure('isolated_profile_unavailable');
     }
-    return Directory('$localAppData\\DevRoute\\codex-home');
+    return Directory(path.join(appDataDirectory, 'DevRoute', 'codex-home'));
   }
 
   Future<void> ensure() async {
@@ -1190,12 +1210,18 @@ inherit = "none"
       return value;
     }
 
-    return <String, String>{
+    final temporaryDirectory = Directory.systemTemp.path;
+    final environment = <String, String>{
       'CODEX_HOME': homeDirectory.path,
-      'SystemRoot': required('SystemRoot'),
-      'TEMP': required('TEMP'),
-      'TMP': required('TMP'),
+      'HOME': homeDirectory.path,
+      'TEMP': temporaryDirectory,
+      'TMP': temporaryDirectory,
+      'TMPDIR': temporaryDirectory,
     };
+    if (Platform.isWindows) {
+      environment['SystemRoot'] = required('SystemRoot');
+    }
+    return environment;
   }
 }
 

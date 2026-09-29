@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:path/path.dart' as path;
 import 'package:devroute_ai_studio/core/agent_control/data/codex_subscription_adapter.dart';
 import 'package:devroute_ai_studio/core/agent_control/domain/agent_models.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -37,6 +38,17 @@ void main() {
   });
 
   test(
+    'default isolated profile uses a platform-specific DevRoute directory',
+    () {
+      final profile = CodexIsolatedRuntime().homeDirectory.path;
+
+      expect(path.isAbsolute(profile), isTrue);
+      expect(path.basename(profile), 'codex-home');
+      expect(path.basename(path.dirname(profile)), 'DevRoute');
+    },
+  );
+
+  test(
     'isolated child environment has no inherited user profile variables',
     () async {
       final root = await Directory.systemTemp.createTemp(
@@ -49,8 +61,21 @@ void main() {
 
       expect(
         environment.keys,
-        unorderedEquals(<String>['CODEX_HOME', 'SystemRoot', 'TEMP', 'TMP']),
+        unorderedEquals(<String>[
+          'CODEX_HOME',
+          'HOME',
+          'TEMP',
+          'TMP',
+          'TMPDIR',
+          if (Platform.isWindows) 'SystemRoot',
+        ]),
       );
+      expect(environment['CODEX_HOME'], root.path);
+      expect(environment['HOME'], root.path);
+      expect(environment['TEMP'], Directory.systemTemp.path);
+      expect(environment['TMP'], Directory.systemTemp.path);
+      expect(environment['TMPDIR'], Directory.systemTemp.path);
+      expect(environment.containsKey('SystemRoot'), Platform.isWindows);
       expect(environment.containsKey('APPDATA'), isFalse);
       expect(environment.containsKey('USERPROFILE'), isFalse);
       expect(environment.keys.any((key) => key.startsWith('OPENAI_')), isFalse);
